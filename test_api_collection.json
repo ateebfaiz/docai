@@ -1,14 +1,26 @@
 {
-  "info": { "name": "Yasmeen DocAI API Tests", "_postman_id": "docai-test-collection", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
+  "info": { "name": "DocAI API Tests", "_postman_id": "docai-test-collection", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
   "item": [
-    { "name": "Health Check", "request": { "method": "GET", "url": "{{BASE_URL}}/health" } },
-    { "name": "Upload Document", "event": [{ "listen": "test", "script": { "exec": [ "pm.test('Status 201', () => pm.response.to.have.status(201));", "const res = pm.response.json();", "pm.environment.set('DOC_ID', res.id);", "console.log('Document ID:', res.id);" ] }}], "request": { "method": "POST", "header": [], "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": [] }] }, "url": { "raw": "{{BASE_URL}}/documents", "host": ["{{BASE_URL}}"], "path": ["documents"] } } },
-    { "name": "Trigger Processing", "request": { "method": "POST", "url": "{{BASE_URL}}/process/{{DOC_ID}}" } },
-    { "name": "Get Status", "request": { "method": "GET", "url": "{{BASE_URL}}/status/{{DOC_ID}}" } },
-    { "name": "Kapso Webhook", "event": [{ "listen": "test", "script": { "exec": [ "pm.test('Webhook received', () => pm.response.to.have.property('json').and.have.property('received'));" ] }}], "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"event_type\": \"document.processed\", \"data\": {\"document_id\": \"doc-20260902171500\"}}" }, "url": { "raw": "{{BASE_URL}}/webhooks/kapso", "host": ["{{BASE_URL}}"], "path": ["webhooks", "kapso"] } } },
-    { "name": "Send Kapso Notify", "request": { "method": "POST", "header": [], "body": { "mode": "formdata", "formdata": [{ "key": "webhook_url", "value": "https://your-kapso-webhook.url" }, { "key": "message", "value": "Your document has been processed successfully." }] }, "url": { "raw": "{{BASE_URL}}/webhooks/kapso/notify", "host": ["{{BASE_URL}}"], "path": ["webhooks", "kapso", "notify"] } }
+    {
+      "name": "Health Check",
+      "event": [{ "listen": "test", "script": { "exec": ["pm.test('Status 200', function(){pm.response.to.have.status(200);});"] } }],
+      "request": { "method": "GET", "url": { "raw": "{{BASE_URL}}/health", "host": ["{{BASE_URL}}"], "path": ["health"] } }
+    },
+    {
+      "name": "Upload Document",
+      "event": [{ "listen": "test", "script": { "exec": ["pm.test('Status 201', function(){pm.response.to.have.status(201);});", "const j = pm.response.json();", "pm.environment.set('DOC_ID', j.id);"] } }],
+      "request": { "method": "POST", "header": [], "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": "/home/ateeb/projects/ai-cli/invoice_test.png" }] }, "url": { "raw": "{{BASE_URL}}/documents", "host": ["{{BASE_URL}}"], "path": ["documents"] } }
+    },
+    {
+      "name": "Trigger Processing",
+      "event": [{ "listen": "test", "script": { "exec": ["pm.test('Status 200', function(){pm.response.to.have.status(200);});"] } }],
+      "request": { "method": "POST", "url": { "raw": "{{BASE_URL}}/process/{{DOC_ID}}", "host": ["{{BASE_URL}}"], "path": ["process", "{{DOC_ID}}"] } }
+    },
+    {
+      "name": "Get Document Status",
+      "event": [{ "listen": "test", "script": { "exec": ["pm.test('Status 200', function(){pm.response.to.have.status(200);});"] } }],
+      "request": { "method": "GET", "url": { "raw": "{{BASE_URL}}/documents/{{DOC_ID}}", "host": ["{{BASE_URL}}"], "path": ["documents", "{{DOC_ID}}"] } }
+    }
   ],
-  "variable": [
-    { "key": "BASE_URL", "value": "http://localhost:8000", "type": "string" }
-  ]
+  "variable": [{ "key": "BASE_URL", "value": "https://docai-production-424b.up.railway.app", "type": "string" }]
 }

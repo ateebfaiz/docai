@@ -1,0 +1,48 @@
+# DocAI — full OCR & document processing stack
+# OCR engines (cascade: docling/rapidocr → paddleocr → easyocr → tesseract)
+docling>=2.124.0
+rapidocr>=3.9.2
+onnxruntime>=1.19.0
+paddleocr>=3.0.0
+easyocr>=1.7.2
+pytesseract>=0.3.13
+opencv-python-headless>=4.10.0
+torch>=2.13.0
+torchvision>=0.28.0
+
+# PDF & document parsing
+pypdf>=5.0.0
+pdfplumber>=0.11.0
+PyMuPDF>=1.24.0
+python-docx>=1.1.0
+openpyxl>=3.1.5
+xlrd>=2.0.1
+camelot-py[cv]>=0.11.0
+tabula-py>=2.9.0
+pandas>=2.2.0
+numpy>=1.26.0
+Pillow>=10.0.0
+
+# Data extraction & cleaning
+dateparser>=1.2.0
+python-dateutil>=2.9.0
+regex>=2024.5.15
+phonenumbers>=8.13.0
+email-validator>=2.1.0
+country-converter>=1.2.0
+
+# Web/API framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
+httpx>=0.27.0
+pydantic>=2.9.0
+
+# Storage
+psycopg2-binary>=2.9.9
+sqlalchemy>=2.0.0
+redis>=5.0.0
+
+# Utilities
+tqdm>=4.66.0
+rich>=13.7.0

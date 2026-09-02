@@ -1,0 +1,1 @@
+__pycache__/\n*.pyc\n.git/\n.env\n.venv/\n*.egg-info/\n.DS_Store\npytest_cache/

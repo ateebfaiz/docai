@@ -57,6 +57,12 @@ CREATE INDEX IF NOT EXISTS idx_docs_type ON documents(doc_type);
 CREATE INDEX IF NOT EXISTS idx_docs_created ON documents(created_at);
 """
 
+# Semantic search field (Postgres FTS) — kept as a generated, queryable column.
+SEARCH_QUERY = """
+SELECT id, name, doc_type, created_at, fields, entities
+FROM documents
+"""
+
 
 class _Store:
     """Thin wrapper: Postgres if DATABASE_URL set, else SQLite."""
@@ -168,6 +174,42 @@ class _Store:
                 """SELECT id,name,status,created_at,doc_type,classification_confidence,
                           fields,entities,tables,cleaned_text,markdown,source_format
                    FROM documents ORDER BY created_at DESC LIMIT 200""").fetchall()
+            conn.close()
+        return [_row_to_dict(r) for r in rows]
+
+    def search(self, q: str = "", doc_type: Optional[str] = None) -> list[dict]:
+        """Semantic search over documents. Postgres uses ILIKE on semantic fields; SQLite LIKE."""
+        where = []
+        params: list = []
+        if doc_type:
+            where.append("doc_type = %s" if self.backend == "postgres" else "doc_type = ?")
+            params.append(doc_type)
+        if q:
+            # Semantic match: entities/fields already capture structured meaning; match their text form
+            like = f"%{q}%"
+            where.append(
+                "(entities ILIKE %s OR fields ILIKE %s OR cleaned_text ILIKE %s OR name ILIKE %s)"
+                if self.backend == "postgres"
+                else "(entities LIKE ? OR fields LIKE ? OR cleaned_text LIKE ? OR name LIKE ?)"
+            )
+            params.extend([like, like, like, like])
+        clause = (" WHERE " + " AND ".join(where)) if where else ""
+        sql = f"""SELECT id,name,status,created_at,doc_type,classification_confidence,
+                          fields,entities,tables,cleaned_text,markdown,source_format
+                   FROM documents{clause} ORDER BY created_at DESC LIMIT 100"""
+        if self.backend == "postgres":
+            import psycopg2
+            conn = self._pg_conn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(sql, tuple(params))
+                    rows = cur.fetchall()
+            finally:
+                conn.close()
+        else:
+            import sqlite3
+            conn = sqlite3.connect(DB_DIR / "docai.db")
+            rows = conn.execute(sql, tuple(params)).fetchall()
             conn.close()
         return [_row_to_dict(r) for r in rows]
 
@@ -292,6 +334,13 @@ async def get_document(document_id: str):
 @app.get("/documents", response_model=list[DocumentResponse])
 async def list_documents():
     return [_to_response(d) for d in store.list_all()]
+
+
+@app.get("/search", response_model=list[DocumentResponse])
+async def search_documents(q: str = "", doc_type: Optional[str] = None):
+    """Semantic search: filter by doc_type and full-text match on extracted content."""
+    results = store.search(q=q, doc_type=doc_type)
+    return [_to_response(d) for d in results]
 
 
 def _to_response(d: dict) -> DocumentResponse:

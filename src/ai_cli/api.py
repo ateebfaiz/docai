@@ -1,4 +1,7 @@
-"""DocAI FastAPI — document OCR pipeline service with full extraction stack."""
+"""DocAI FastAPI — document OCR pipeline service with full extraction stack.
+Persists to Postgres (DATABASE_URL) when set — Railway/Neon — else falls back to SQLite for local dev.
+"""
+import json
 import os
 import shutil
 import uuid
@@ -10,10 +13,14 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# Import local pipeline module (same dir in container)
 from pipeline import run_full_pipeline
 
-app = FastAPI(title="DocAI", version="0.2.0", description="Full OCR & extraction pipeline")
+# ---------------------------------------------------------------------------
+# App
+# ---------------------------------------------------------------------------
+
+app = FastAPI(title="DocAI", version="0.3.0",
+              description="Full OCR & extraction pipeline (adaptive, content-aware)")
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,35 +29,181 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ---------------------------------------------------------------------------
 # Storage
+# ---------------------------------------------------------------------------
+
 UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "/data/uploads"))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 DB_DIR = Path(os.environ.get("DB_DIR", "/data"))
 DB_DIR.mkdir(parents=True, exist_ok=True)
 
-# In-memory job store (SQLite file for persistence across restarts)
-import sqlite3
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS documents (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    status TEXT,
+    created_at TEXT,
+    doc_type TEXT,
+    classification_confidence REAL DEFAULT 0,
+    fields TEXT,
+    entities TEXT,
+    tables TEXT,
+    cleaned_text TEXT,
+    markdown TEXT,
+    source_format TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_docs_type ON documents(doc_type);
+CREATE INDEX IF NOT EXISTS idx_docs_created ON documents(created_at);
+"""
 
-DB_PATH = DB_DIR / "docai.db"
-JOBS: dict[str, dict] = {}
+
+class _Store:
+    """Thin wrapper: Postgres if DATABASE_URL set, else SQLite."""
+
+    def __init__(self):
+        self.url = os.environ.get("DATABASE_URL")
+        self.backend = "postgres" if self.url else "sqlite"
+        if self.backend == "postgres":
+            import psycopg2
+            self._init_pg(psycopg2)
+
+    def _init_pg(self, psycopg2):
+        try:
+            conn = psycopg2.connect(self.url)
+            conn.autocommit = True
+            with conn.cursor() as cur:
+                cur.execute(SCHEMA)
+            conn.close()
+        except Exception as e:
+            # Fall back to SQLite if Postgres is unavailable at boot
+            print(f"Postgres init failed ({e}); falling back to SQLite")
+            self.backend = "sqlite"
+
+    def _pg_conn(self):
+        import psycopg2
+        return psycopg2.connect(self.url)
+
+    def insert(self, doc: dict):
+        if self.backend == "postgres":
+            conn = self._pg_conn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """INSERT INTO documents
+                           (id, name, status, created_at, doc_type, classification_confidence,
+                            fields, entities, tables, cleaned_text, markdown, source_format)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        (doc["id"], doc["name"], doc["status"], doc["created_at"],
+                         doc.get("doc_type"), doc.get("classification_confidence", 0),
+                         json.dumps(doc.get("fields", {})),
+                         json.dumps(doc.get("entities", {})),
+                         json.dumps(doc.get("tables", [])),
+                         doc.get("cleaned_text", ""), doc.get("markdown", ""),
+                         doc.get("source_format", "")),
+                    )
+                conn.commit()
+            finally:
+                conn.close()
+        else:
+            import sqlite3
+            conn = sqlite3.connect(DB_DIR / "docai.db")
+            conn.execute(SCHEMA)
+            conn.execute(
+                """INSERT INTO documents
+                   (id, name, status, created_at, doc_type, classification_confidence,
+                    fields, entities, tables, cleaned_text, markdown, source_format)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (doc["id"], doc["name"], doc["status"], doc["created_at"],
+                 doc.get("doc_type"), doc.get("classification_confidence", 0),
+                 json.dumps(doc.get("fields", {})),
+                 json.dumps(doc.get("entities", {})),
+                 json.dumps(doc.get("tables", [])),
+                 doc.get("cleaned_text", ""), doc.get("markdown", ""),
+                 doc.get("source_format", "")),
+            )
+            conn.commit()
+            conn.close()
+
+    def get(self, doc_id: str) -> Optional[dict]:
+        if self.backend == "postgres":
+            import psycopg2
+            conn = self._pg_conn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """SELECT id,name,status,created_at,doc_type,classification_confidence,
+                                  fields,entities,tables,cleaned_text,markdown,source_format
+                           FROM documents WHERE id=%s""", (doc_id,))
+                    row = cur.fetchone()
+            finally:
+                conn.close()
+        else:
+            import sqlite3
+            conn = sqlite3.connect(DB_DIR / "docai.db")
+            row = conn.execute(
+                """SELECT id,name,status,created_at,doc_type,classification_confidence,
+                          fields,entities,tables,cleaned_text,markdown,source_format
+                   FROM documents WHERE id=?""", (doc_id,)).fetchone()
+            conn.close()
+        return _row_to_dict(row)
+
+    def list_all(self) -> list[dict]:
+        if self.backend == "postgres":
+            import psycopg2
+            conn = self._pg_conn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """SELECT id,name,status,created_at,doc_type,classification_confidence,
+                                  fields,entities,tables,cleaned_text,markdown,source_format
+                           FROM documents ORDER BY created_at DESC LIMIT 200""")
+                    rows = cur.fetchall()
+            finally:
+                conn.close()
+        else:
+            import sqlite3
+            conn = sqlite3.connect(DB_DIR / "docai.db")
+            rows = conn.execute(
+                """SELECT id,name,status,created_at,doc_type,classification_confidence,
+                          fields,entities,tables,cleaned_text,markdown,source_format
+                   FROM documents ORDER BY created_at DESC LIMIT 200""").fetchall()
+            conn.close()
+        return [_row_to_dict(r) for r in rows]
 
 
-def _db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS documents (
-            id TEXT PRIMARY KEY,
-            name TEXT,
-            status TEXT,
-            created_at TEXT,
-            doc_type TEXT,
-            entities TEXT,
-            cleaned_text TEXT,
-            markdown TEXT
-        )"""
-    )
-    return conn
+_depth = None
 
+
+def _row_to_dict(row):
+    """Convert a row to a dict. Works for both sqlite tuples and psycopg tuples (reordered)."""
+    if row is None:
+        return None
+    cols = ["id", "name", "status", "created_at", "doc_type",
+            "classification_confidence", "fields", "entities", "tables",
+            "cleaned_text", "markdown", "source_format"]
+    d = {c: (v if v is not None else (0 if c == "classification_confidence" else "")) for c, v in zip(cols, row)}
+    try:
+        d["fields"] = json.loads(d["fields"]) if d.get("fields") else {}
+    except Exception:
+        d["fields"] = {}
+    try:
+        d["entities"] = json.loads(d["entities"]) if d.get("entities") else {}
+    except Exception:
+        d["entities"] = {}
+    try:
+        d["tables"] = json.loads(d["tables"]) if d.get("tables") else []
+    except Exception:
+        d["tables"] = []
+    return d
+
+
+store = _Store()
+
+
+# ---------------------------------------------------------------------------
+# Models
+# ---------------------------------------------------------------------------
 
 class DocumentResponse(BaseModel):
     id: str
@@ -58,90 +211,101 @@ class DocumentResponse(BaseModel):
     status: str
     created_at: str
     doc_type: Optional[str] = None
+    classification_confidence: float = 0
+    fields: Optional[dict] = None
     entities: Optional[dict] = None
+    tables_found: int = 0
+    page_count: int = 0
     ocr_text: Optional[str] = None
     markdown: Optional[str] = None
-    tables_found: int = 0
 
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
 
 @app.get("/health")
 async def health():
-    """Health check for Railway probes."""
-    return {"status": "ok", "service": "docai", "version": "0.2.0"}
+    return {
+        "status": "ok",
+        "service": "docai",
+        "version": "0.3.0",
+        "storage": store.backend,
+    }
 
 
 @app.post("/documents", response_model=DocumentResponse, status_code=201)
 async def upload_document(file: UploadFile = File(...)):
-    """Upload a document and process it immediately through the full pipeline."""
     doc_id = f"doc-{uuid.uuid4().hex[:12]}"
     safe_name = Path(file.filename or "upload").name
+    ext = Path(safe_name).suffix.lower()
+
     dest = UPLOAD_DIR / f"{doc_id}_{safe_name}"
     with dest.open("wb") as fh:
         shutil.copyfileobj(file.file, fh)
 
-    # Run the full OCR/extraction pipeline
     try:
         report = run_full_pipeline(dest)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"pipeline failed: {e}")
 
-    entities = report.get("entities", {})
-    conn = _db()
-    conn.execute(
-        "INSERT INTO documents VALUES (?,?,?,?,?,?,?,?)",
-        (
-            doc_id, safe_name, "done",
-            datetime.now(timezone.utc).isoformat(),
-            report.get("document_type"),
-            __import__("json").dumps(entities),
-            report.get("cleaned_text", ""),
-            report.get("markdown", ""),
-        ),
-    )
-    conn.commit()
-    conn.close()
+    doc = {
+        "id": doc_id,
+        "name": safe_name,
+        "status": "done",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "doc_type": report.get("document_type"),
+        "classification_confidence": report.get("classification_confidence", 0),
+        "fields": report.get("fields", {}),
+        "entities": report.get("entities", {}),
+        "tables": report.get("tables", []),
+        "cleaned_text": report.get("cleaned_text", ""),
+        "markdown": report.get("markdown", ""),
+        "source_format": ext,
+    }
+    store.insert(doc)
 
     return DocumentResponse(
         id=doc_id,
         name=safe_name,
         status="done",
-        created_at=datetime.now(timezone.utc).isoformat(),
-        doc_type=report.get("document_type"),
-        entities=entities,
-        ocr_text=report.get("cleaned_text", "")[:2000],
-        markdown=report.get("markdown", "")[:5000],
-        tables_found=report.get("tables_found", 0),
+        created_at=doc["created_at"],
+        doc_type=doc["doc_type"],
+        classification_confidence=doc["classification_confidence"],
+        fields=doc["fields"],
+        entities=doc["entities"],
+        tables_found=len(doc["tables"]),
+        page_count=report.get("page_count", 0),
+        ocr_text=doc["cleaned_text"][:2000],
+        markdown=doc["markdown"][:5000],
     )
 
 
 @app.get("/documents/{document_id}", response_model=DocumentResponse)
 async def get_document(document_id: str):
-    """Retrieve a processed document from the store."""
-    conn = _db()
-    row = conn.execute("SELECT * FROM documents WHERE id = ?", (document_id,)).fetchone()
-    conn.close()
-    if not row:
+    d = store.get(document_id)
+    if not d:
         raise HTTPException(status_code=404, detail="document not found")
-    import json
-    return DocumentResponse(
-        id=row[0], name=row[1], status=row[2], created_at=row[3],
-        doc_type=row[4], entities=json.loads(row[5]) if row[5] else {},
-        ocr_text=(row[6] or "")[:2000], markdown=(row[7] or "")[:5000],
-    )
+    return _to_response(d)
 
 
 @app.get("/documents", response_model=list[DocumentResponse])
 async def list_documents():
-    """List all processed documents."""
-    conn = _db()
-    rows = conn.execute("SELECT * FROM documents ORDER BY created_at DESC").fetchall()
-    conn.close()
-    import json
-    return [
-        DocumentResponse(
-            id=r[0], name=r[1], status=r[2], created_at=r[3],
-            doc_type=r[4], entities=json.loads(r[5]) if r[5] else {},
-            ocr_text=(r[6] or "")[:2000],
-        )
-        for r in rows
-    ]
+    return [_to_response(d) for d in store.list_all()]
+
+
+def _to_response(d: dict) -> DocumentResponse:
+    return DocumentResponse(
+        id=d["id"],
+        name=d["name"],
+        status=d["status"],
+        created_at=d["created_at"],
+        doc_type=d.get("doc_type"),
+        classification_confidence=d.get("classification_confidence", 0),
+        fields=d.get("fields", {}),
+        entities=d.get("entities", {}),
+        tables_found=len(d.get("tables", [])),
+        page_count=int(d.get("page_count", 0) or 0),
+        ocr_text=(d.get("cleaned_text") or "")[:2000],
+        markdown=(d.get("markdown") or "")[:5000],
+    )

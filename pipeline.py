@@ -191,7 +191,7 @@ def ocr_image(path: str | Path) -> tuple[str, dict]:
 
 def parse_document(path: str | Path) -> dict[str, Any]:
     """Docling: PDF/image/docx/xlsx/html → structure + tables + md."""
-    result: dict[str, Any] = {"markdown": "", "tables": [], "text": "", "error": None}
+    result: dict[str, Any] = {"markdown": "", "tables": [], "text": "", "error": None, "page_count": 0}
     conv = _docling()
     if conv is None:
         result["error"] = "docling unavailable"
@@ -208,13 +208,14 @@ def parse_document(path: str | Path) -> dict[str, Any]:
             except Exception:
                 continue
         result["tables"] = tables
+        result["page_count"] = len(getattr(doc, "pages", []) or [])
     except Exception as e:
         result["error"] = str(e)
     return result
 
 
 # ---------------------------------------------------------------------------
-# 4. ENTITY EXTRACTION — money, dates, phones, emails, invoice numbers
+# 4. ENTITY EXTRACTION — money, dates, phones, emails, invoice numbers, ids
 # ---------------------------------------------------------------------------
 
 _MONEY_RE = re.compile(r"(?:US\$|USD|\$|PKR|Rs\.?)\s?([0-9][0-9,]*(?:\.[0-9]{2})?)", re.I)
@@ -223,10 +224,15 @@ _DATE_RE = re.compile(
     r"|\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})\b",
     re.I,
 )
-_PHONE_RE = re.compile(r"(?:\+?\d{1,3}[\s\-]?)?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{4}")
+_PHONE_RE = re.compile(r"(?:\+?\d{1,3}[\s\-]?)?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{4}|\+?9\d{9,}")
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 _INVOICE_RE = re.compile(r"(?:invoice|inv|bill)\s*(?:no|#|number)?\.?\s*:?\s*([A-Za-z0-9\-/]{4,})", re.I)
 _CNIC_RE = re.compile(r"\b\d{5}[\s\-]?\d{7}[\s\-]?\d\b")
+_ACCOUNT_RE = re.compile(r"(?:account|a/c|iban)\s*(?:no|#|number)?\.?:?\s*([A-Z0-9]{6,})", re.I)
+_ORDER_RE = re.compile(r"(?:order|po)\s*(?:no|#|number|id)?\.?\s*:?\s*([A-Za-z0-9\-]{4,})", re.I)
+_REGISTRATION_RE = re.compile(r"(?:registration|reg)\s*(?:no|#|number)?\.?\s*:?\s*([A-Za-z0-9\-]{4,})", re.I)
+_TAXYEAR_RE = re.compile(r"\btax\s*(?:year|period)\s*:\s*(\d{4})", re.I)
+_NAME_RE = re.compile(r"(?:name)\s*:\s*([A-Z][A-Z \.]+)", re.I)
 
 
 def extract_entities(text: str) -> dict[str, list[str]]:
@@ -236,73 +242,254 @@ def extract_entities(text: str) -> dict[str, list[str]]:
         "dates": list(dict.fromkeys(_DATE_RE.findall(text))),
         "phones": list(dict.fromkeys(_PHONE_RE.findall(text))),
         "emails": list(dict.fromkeys(_EMAIL_RE.findall(text))),
-        "invoice_numbers": list(dict.fromkeys(_INVOICE_RE.findall(text))),
+        "invoice_numbers": list(dict.fromkeys([m for m in _INVOICE_RE.findall(text) if len(m) > 2])),
         "cnic_ids": list(dict.fromkeys(_CNIC_RE.findall(text))),
+        "account_numbers": list(dict.fromkeys(_ACCOUNT_RE.findall(text))),
+        "order_numbers": list(dict.fromkeys([m for m in _ORDER_RE.findall(text) if len(m) > 2])),
+        "registration_numbers": list(dict.fromkeys([m for m in _REGISTRATION_RE.findall(text) if len(m) > 2])),
+        "names": list(dict.fromkeys([m.strip() for m in _NAME_RE.findall(text)])),
     }
 
 
 # ---------------------------------------------------------------------------
-# 5. CLASSIFICATION — taxonomy keywords
+# 5. ADAPTIVE, CONTENT-AWARE CLASSIFICATION
 # ---------------------------------------------------------------------------
 
-_TAXONOMY: dict[str, list[str]] = {
-    "invoice": ["invoice", "total due", "amount payable", "bill to"],
-    "bank_statement": ["account statement", "bank statement", "transaction"],
-    "tax": ["tax return", "federal tax", "irs", "fbr"],
-    "employment": ["employee", "salary slip", "offer letter", "payroll"],
-    "immigration": ["passport", "visa", "immigration", "travel document"],
-    "receipt": ["receipt", "payment received", "thank you for your"],
-    "identity": ["national identity", "cnic", "driving license"],
-    "order": ["order id", "order number", "delivery", "shipment"],
-    "legal": ["court", "complaint", "affidavit", "legal notice"],
-    "personal": ["profile", "personal information", "address:"],
+# Strong positive signals (weighted by how distinctive they are)
+_TAXONOMY: dict[str, list[tuple[str, float]]] = {
+    "invoice": [
+        ("invoice", 3), ("total due", 3), ("amount payable", 3),
+        ("balance due", 2), ("bill to", 2), ("payment terms", 1), ("due date", 1),
+    ],
+    "tax": [
+        ("federal board of revenue", 5), ("fbr", 4), ("tax", 2), ("tax year", 3),
+        ("income tax", 3), ("self assessment", 4), ("return", 1), ("taxable income", 3),
+        ("registration no", 2), ("fil source", 1), ("tax reduction", 2),
+    ],
+    "bank_statement": [
+        ("account statement", 4), ("bank statement", 5), ("transaction", 2),
+        ("account summary", 3), ("debit", 2), ("credit", 2), ("opening balance", 3),
+        ("closing balance", 3), ("bank", 1),
+    ],
+    "employment": [
+        ("salary", 2), ("payroll", 3), ("employer", 2), ("employee", 2),
+        ("offer letter", 3), ("wages", 2), ("pay slip", 4), ("remuneration", 3),
+    ],
+    "immigration": [
+        ("passport", 4), ("visa", 4), ("immigration", 4), ("travel document", 3),
+        ("residence permit", 3), ("border", 1),
+    ],
+    "receipt": [
+        ("receipt", 3), ("payment received", 3), ("thank you for your", 2),
+        ("paid", 1), ("total paid", 2),
+    ],
+    "identity": [
+        ("cnic", 4), ("national identity", 4), ("driving license", 3),
+        ("license no", 2), ("nic", 3), ("identity card", 3),
+    ],
+    "order": [
+        ("order id", 3), ("order number", 3), ("order no", 3), ("shipment", 2),
+        ("delivery", 2), ("shipping", 1), ("tracking", 1), ("customer", 1),
+    ],
+    "legal": [
+        ("court", 3), ("complaint", 3), ("affidavit", 3), ("legal notice", 3),
+        ("plaintiff", 3), ("defendant", 3), ("judgment", 2), ("petition", 2),
+    ],
+    "personal": [
+        ("profile", 2), ("personal information", 2), ("address", 1),
+        ("contact", 1), ("mobile", 1), ("subscriber", 1),
+    ],
+}
+
+# Negative signals that down-rank a category (content-aware: avoid false positives)
+_NEGATIVE: dict[str, list[str]] = {
+    "order": ["order to make", "tax order"],       # FBR "Order" doc is tax, not order
+    "invoice": ["tax invoice", "order for"],       # tax invoice ≠ invoice
+    "personal": ["registration", "self assessment"],
+}
+_NEGATIVE_WEIGHT = -2.0
+
+# Entity → category hint (adaptive: extracted content informs classification)
+_ENTITY_HINTS: dict[str, str] = {
+    "invoice_numbers": "invoice",
+    "cnic_ids": "identity",
+    "registration_numbers": "tax",
+    "order_numbers": "order",
+    "account_numbers": "bank_statement",
 }
 
 
-def classify(text: str) -> dict[str, Any]:
-    """Classify doc into taxonomy categories with confidence scores."""
+def _flatten(entity_values: dict) -> str:
+    """Flatten extracted entities into a searchable string."""
+    parts = []
+    for k, v in entity_values.items():
+        if isinstance(v, list):
+            parts.extend(str(x) for x in v)
+    return " ".join(parts).lower()
+
+
+def classify(text: str, entities: dict | None = None) -> dict[str, Any]:
+    """Content-aware classification using weighted keywords + entity hints + negatives."""
     low = text.lower()
-    scores: dict[str, int] = {}
+    scores: dict[str, float] = {}
+
+    # Weighted positive keyword matches
     for cat, kws in _TAXONOMY.items():
-        score = sum(1 for k in kws if k in low)
+        score = 0.0
+        matched = []
+        for kw, weight in kws:
+            if kw in low:
+                score += weight
+                matched.append(kw)
         if score:
             scores[cat] = score
+
+    # Adaptive entity hints (boost based on what was actually extracted)
+    if entities:
+        flat = _flatten(entities)
+        for ent_key, ent_cat in _ENTITY_HINTS.items():
+            v = entities.get(ent_key)
+            if isinstance(v, list) and v:
+                # Only boost if the entity is meaningful (exclude pure digit noise)
+                meaningful = [x for x in v if any(c.isalpha() for c in str(x)) or len(str(x)) > 5]
+                if meaningful:
+                    scores[ent_cat] = scores.get(ent_cat, 0) + 2.0
+
+    # Apply negative signals (down-rank false positives)
+    for cat, negs in _NEGATIVE.items():
+        if any(neg in low for neg in negs):
+            scores[cat] = scores.get(cat, 0) + _NEGATIVE_WEIGHT
+
     top = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
     if not top:
-        return {"category": "uncategorized", "confidence": 0.0, "matches": {}}
-    total = sum(v for _, v in top)
+        return {"category": "uncategorized", "confidence": 0.0, "matches": {}, "used_hints": False}
+
+    # Confidence = top score / total positive score (exclude negatives turned zero)
+    positive_total = sum(v for v in scores.values() if v > 0)
+    if positive_total <= 0:
+        return {"category": "uncategorized", "confidence": 0.0, "matches": {},
+                "used_hints": bool(entities)}
+
+    winner, winner_score = top[0]
+    # If winner got dragged to <=0 by negatives, fall back to highest positive
+    if winner_score <= 0:
+        winner = max(scores, key=lambda k: scores[k])
+        winner_score = scores[winner]
+        if winner_score <= 0:
+            return {"category": "uncategorized", "confidence": 0.0, "matches": {},
+                    "used_hints": bool(entities)}
+
     return {
-        "category": top[0][0],
-        "confidence": round(top[0][1] / total, 2),
-        "matches": dict(top[:3]),
+        "category": winner,
+        "confidence": round(winner_score / positive_total, 2),
+        "matches": {cat: round(s, 2) for cat, s in scores.items() if s > 0},
+        "used_hints": bool(entities),
     }
 
 
 # ---------------------------------------------------------------------------
-# 6. CLEANING — normalize whitespace, unicode, OCR garbage
+# 6. ADAPTIVE PER-DOCUMENT FIELD EXTRACTION (content-specific schema)
 # ---------------------------------------------------------------------------
 
-_GARBAGE = re.compile(r"[^\S\n]+")
+# For each doc type, define which fields are relevant. Only include non-empty ones.
+_TYPE_FIELDS: dict[str, list[tuple[str, str]]] = {
+    "invoice": [
+        ("invoice_number", "invoice_numbers"),
+        ("total_amount", "amounts"),
+        ("due_date", "dates"),
+        ("vendor", "names"),
+    ],
+    "tax": [
+        ("registration_no", "registration_numbers"),
+        ("tax_year", "tax_year"),
+        ("taxable_income", "amounts"),
+        ("taxpayer", "names"),
+    ],
+    "bank_statement": [
+        ("account_no", "account_numbers"),
+        ("transactions", "dates"),
+        ("amounts", "amounts"),
+    ],
+    "order": [
+        ("order_no", "order_numbers"),
+        ("amounts", "amounts"),
+        ("customer", "names"),
+        ("dates", "dates"),
+    ],
+    "identity": [
+        ("cnic_no", "cnic_ids"),
+        ("names", "names"),
+    ],
+    "receipt": [
+        ("receipt_amount", "amounts"),
+        ("date", "dates"),
+    ],
+    "employment": [
+        ("salary", "amounts"),
+        ("employee", "names"),
+    ],
+    "personal": [
+        ("names", "names"),
+        ("phones", "phones"),
+        ("emails", "emails"),
+        ("cnic_ids", "cnic_ids"),
+    ],
+}
 
+
+def _extract_tax_year(text: str) -> str:
+    m = _TAXYEAR_RE.search(text)
+    if m:
+        return m.group(1)
+    # Fallback: "2025" alone near year context
+    for y in re.findall(r"\b(20\d{2})\b", text):
+        if y != str(date.today().year):
+            return y
+    return ""
+
+
+def _get_entities_for_field(text: str, field_src: str, entities: dict) -> list[str]:
+    """Pull the appropriate entity list or inject a computed field."""
+    if field_src in entities:
+        return [str(x) for x in entities[field_src] if x]
+    if field_src == "tax_year":
+        y = _extract_tax_year(text)
+        return [y] if y else []
+    return []
+
+
+def extract_typed_fields(text: str, doc_type: str, entities: dict) -> dict[str, list[str]]:
+    """Content-adaptive: extract only fields relevant to the detected doc type."""
+    if doc_type not in _TYPE_FIELDS:
+        # Fallback: generic extraction for unknown types
+        return {k: [str(x) for x in v if x] for k, v in entities.items()}
+    result: dict[str, list[str]] = {}
+    for field_name, field_src in _TYPE_FIELDS[doc_type]:
+        values = _get_entities_for_field(text, field_src, entities)
+        if values:
+            result[field_name] = values
+    return result
+
+
+# ---------------------------------------------------------------------------
+# 7. CLEANING — normalize whitespace, unicode, OCR garbage
+# ---------------------------------------------------------------------------
 
 def clean_text(raw: str) -> str:
     """Remove OCR artifacts and normalize whitespace/encoding."""
-    # normalize unicode dashes/quotes
     raw = raw.replace("\u2014", "-").replace("\u2013", "-")
     raw = raw.replace("\u201c", '"').replace("\u201d", '"')
     raw = raw.replace("\u2018", "'").replace("\u2019", "'")
-    # drop nulls and control chars (keep newlines)
     raw = "".join(ch for ch in raw if ch >= " " or ch in "\n\t")
-    # collapse runs of spaces but keep line breaks
     lines = [re.sub(r"[ \t]+", " ", ln).strip() for ln in raw.splitlines()]
     return "\n".join(l for l in lines if l)
 
 
 # ---------------------------------------------------------------------------
-# 7. PRETTY OUTPUT — structured report with rich metadata
+# 8. PRETTY OUTPUT — structured report with rich metadata
 # ---------------------------------------------------------------------------
 
-def make_report(source: str, parse: dict, entities: dict, cls: dict,
+def make_report(source: str, parse: dict, entities: dict, cls: dict, typed_fields: dict,
                 ocr_report: dict | None = None, engine: str = "") -> dict:
     """Assemble a clean, human-readable extraction report."""
     now = datetime.now().isoformat()
@@ -312,8 +499,12 @@ def make_report(source: str, parse: dict, entities: dict, cls: dict,
         "engine": engine or ("docling" if not parse.get("error") else "ocr-cascade"),
         "document_type": cls.get("category", "uncategorized"),
         "classification_confidence": cls.get("confidence", 0),
+        "classification_matches": cls.get("matches", {}),
         "entities": {k: v for k, v in entities.items() if v},
+        "fields": typed_fields,                       # content-adaptive typed fields
+        "tables": parse.get("tables", []),
         "tables_found": len(parse.get("tables", [])),
+        "page_count": parse.get("page_count", 0),
         "chars_extracted": len(parse.get("text", "") or ""),
         "ocr_engine_report": ocr_report or {},
         "cleaned_text": clean_text(parse.get("text", "") or ""),
@@ -322,28 +513,27 @@ def make_report(source: str, parse: dict, entities: dict, cls: dict,
 
 
 def run_full_pipeline(path: str | Path) -> dict:
-    """Run every tool: preprocess → parse (docling) → OCR fallback → entities → classify."""
+    """Run every tool: preprocess → parse (docling) → OCR fallback → entities → adaptive classify."""
     p = Path(path)
     ext = p.suffix.lower()
     parse = parse_document(p)
     text = parse.get("text") or ""
 
     ocr_report: dict[str, Any] = {}
-    # For images / when docling produced no text, run OCR cascade
     if ext in (".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".webp") or not text.strip():
         ocr_text, ocr_report = ocr_image(p)
         if len(ocr_text) > len(text):
             text = ocr_text
             parse["text"] = text
 
-    # fallback for structured files docling can't read
     if not text.strip():
         text = _read_fallback(p)
         parse["text"] = text
 
     entities = extract_entities(text)
-    cls = classify(text)
-    return make_report(str(p), parse, entities, cls, ocr_report)
+    cls = classify(text, entities)                          # content-aware
+    typed_fields = extract_typed_fields(text, cls.get("category"), entities)  # per-type schema
+    return make_report(str(p), parse, entities, cls, typed_fields, ocr_report)
 
 
 def _read_fallback(p: Path) -> str:

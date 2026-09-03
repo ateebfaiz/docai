@@ -573,19 +573,30 @@ def run_full_pipeline(path: str | Path) -> dict:
     """Run every tool: preprocess → parse (docling) → OCR fallback → entities → adaptive classify."""
     p = Path(path)
     ext = p.suffix.lower()
-    parse = parse_document(p)
-    text = parse.get("text") or ""
+    _IMG_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".webp", ".heic"}
+    _TEXT_EXTS = {".txt", ".csv", ".md", ".json", ".xml", ".html", ".htm", ".log"}
 
-    ocr_report: dict[str, Any] = {}
-    if ext in (".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".webp") or not text.strip():
-        ocr_text, ocr_report = ocr_image(p)
-        if len(ocr_text) > len(text):
-            text = ocr_text
-            parse["text"] = text
-
-    if not text.strip():
+    # Native text formats: read directly, NEVER through image OCR.
+    if ext in _TEXT_EXTS:
         text = _read_fallback(p)
-        parse["text"] = text
+        parse: dict[str, Any] = {"markdown": "", "tables": [], "text": text,
+                                 "error": None, "page_count": 0}
+        if ext == ".md":
+            parse["markdown"] = text
+        ocr_report: dict[str, Any] = {"skipped": "text-based file (no OCR needed)"}
+    else:
+        parse = parse_document(p)
+        text = parse.get("text") or ""
+        ocr_report = {}
+        # Image files, or non-text binary docs docling couldn't parse → OCR.
+        if ext in _IMG_EXTS or (not text.strip() and ext not in _TEXT_EXTS):
+            ocr_text, ocr_report = ocr_image(p)
+            if len(ocr_text) > len(text):
+                text = ocr_text
+                parse["text"] = text
+        if not text.strip():
+            text = _read_fallback(p)
+            parse["text"] = text
 
     entities = extract_entities(text)
     cls = classify(text, entities)                          # content-aware
@@ -594,7 +605,7 @@ def run_full_pipeline(path: str | Path) -> dict:
 
 
 def _read_fallback(p: Path) -> str:
-    """Open xlsx/docx/csv/txt if docling missed them."""
+    """Open xlsx/docx/csv/txt/json/md if docling missed them."""
     try:
         if p.suffix == ".xlsx":
             return "\n".join(
@@ -604,10 +615,10 @@ def _read_fallback(p: Path) -> str:
         if p.suffix == ".docx":
             import docx
             return "\n".join(par.text for par in docx.Document(str(p)).paragraphs)
-        if p.suffix == ".csv":
-            return open(p, encoding="utf-8", errors="ignore").read()
-        if p.suffix == ".txt":
-            return open(p, encoding="utf-8", errors="ignore").read()
+        if p.suffix in (".csv", ".txt", ".md", ".json", ".xml", ".html", ".htm", ".log"):
+            data = p.read_text(encoding="utf-8", errors="ignore")
+            # JSON manifests and CSV blobs are readable as-is; MD maps directly.
+            return data
     except Exception:
         pass
     return ""

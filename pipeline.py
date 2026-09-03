@@ -235,19 +235,64 @@ _TAXYEAR_RE = re.compile(r"\btax\s*(?:year|period)\s*:\s*(\d{4})", re.I)
 _NAME_RE = re.compile(r"(?:name)\s*:\s*([A-Z][A-Z \.]+)", re.I)
 
 
+# Entity validation guards — reject false positives from OCR noise & split words.
+_STOPWORDS = {"address", "contact", "mobile", "phone", "name", "no", "number",
+              "date", "due", "status", "system", "medium", "period", "registration",
+              "description", "code", "amount", "total", "subtotal", "grand",
+              "individual", "company", "invoice", "receipt", "bank", "account"}
+_RETURN_OR_FIELD = {"name", "address", "contact", "total", "taxable", "income",
+                    "registration", "status", "due", "date", "medium", "system",
+                    "period", "amount", "description"}
+
+
+def _valid_id(s: str) -> bool:
+    """Reject obvious OCR truncations and stop-words for ID fields."""
+    v = s.strip()
+    if len(v) < 4:
+        return False
+    # Must be alphanumeric with at least one digit (real IDs/CINCs/orders)
+    if not any(ch.isdigit() for ch in v):
+        return False
+    # Reject bare stopwords (e.g. "istration", "status", "address")
+    if v.lower() in _STOPWORDS or v.lower().lstrip(".") in _RETURN_OR_FIELD:
+        return False
+    # Reject truncated fragments (single letter prefix, or fragments like "istration")
+    if v[0] in "aeiouAEIOU" and len(v) < 6 and not v.isdigit():
+        return False
+    return True
+
+
+def _valid_name(s: str) -> bool:
+    """Reject label/header words captured as 'names' (address:, contact:, etc.)."""
+    v = s.strip()
+    if len(v) < 3:
+        return False
+    if v.lower().rstrip(".") in _RETURN_OR_FIELD or v.lower() in _STOPWORDS:
+        return False
+    # A name normally has ≥2 words or is a single recognizable name (not "Address"/"Status")
+    if len(v.split()) == 1 and not v.istitle():
+        return False
+    return True
+
+
 def extract_entities(text: str) -> dict[str, list[str]]:
-    """Extract structured fields from raw text via regex layers."""
+    """Extract structured fields from raw text via regex layers + validation."""
     return {
         "amounts": list(dict.fromkeys(_MONEY_RE.findall(text))),
         "dates": list(dict.fromkeys(_DATE_RE.findall(text))),
         "phones": list(dict.fromkeys(_PHONE_RE.findall(text))),
         "emails": list(dict.fromkeys(_EMAIL_RE.findall(text))),
-        "invoice_numbers": list(dict.fromkeys([m for m in _INVOICE_RE.findall(text) if len(m) > 2])),
+        "invoice_numbers": list(dict.fromkeys(
+            m for m in _INVOICE_RE.findall(text) if m.strip() and _valid_id(m))),
         "cnic_ids": list(dict.fromkeys(_CNIC_RE.findall(text))),
-        "account_numbers": list(dict.fromkeys(_ACCOUNT_RE.findall(text))),
-        "order_numbers": list(dict.fromkeys([m for m in _ORDER_RE.findall(text) if len(m) > 2])),
-        "registration_numbers": list(dict.fromkeys([m for m in _REGISTRATION_RE.findall(text) if len(m) > 2])),
-        "names": list(dict.fromkeys([m.strip() for m in _NAME_RE.findall(text)])),
+        "account_numbers": list(dict.fromkeys(
+            m for m in _ACCOUNT_RE.findall(text) if _valid_id(m))),
+        "order_numbers": list(dict.fromkeys(
+            m for m in _ORDER_RE.findall(text) if _valid_id(m))),
+        "registration_numbers": list(dict.fromkeys(
+            m for m in _REGISTRATION_RE.findall(text) if _valid_id(m))),
+        "names": list(dict.fromkeys(
+            m.strip() for m in _NAME_RE.findall(text) if _valid_name(m))),
     }
 
 
@@ -438,14 +483,26 @@ _TYPE_FIELDS: dict[str, list[tuple[str, str]]] = {
 
 
 def _extract_tax_year(text: str) -> str:
+    # Strict: "tax year:" or "tax period:" followed by a 4-digit year
     m = _TAXYEAR_RE.search(text)
     if m:
         return m.group(1)
-    # Fallback: "2025" alone near year context
-    for y in re.findall(r"\b(20\d{2})\b", text):
-        if y != str(date.today().year):
-            return y
-    return ""
+    # Relaxed: 4-digit year that appears as its own token right after "year"/"period"
+    for pat in (r"\byear[:\s]*(20\d{2})\b", r"\bperiod[:\s]*(20\d{2})\b"):
+        mm = re.search(pat, text, re.I)
+        if mm:
+            return mm.group(1)
+    # Range fallback (e.g. "01-Jul-2024 - 30-Jun-2025"): prefer the END year as the tax year
+    m_range = re.search(r"(20\d{2})\s*[-–]\s*(?:[\dA-Za-z\- ]+)?(20\d{2})", text)
+    if m_range:
+        return m_range.group(2)
+    # Last resort: a bare 20xx year that isn't part of a date range — take the most common
+    years = re.findall(r"\b(20\d\d)\b", text)
+    if not years:
+        return ""
+    from collections import Counter
+    year = Counter(years).most_common(1)[0][0]
+    return year
 
 
 def _get_entities_for_field(text: str, field_src: str, entities: dict) -> list[str]:

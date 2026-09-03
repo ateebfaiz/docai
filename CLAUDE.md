@@ -134,20 +134,82 @@ autoMemoryReclaim=gradual
 
 **Purpose:** convert any document into clean structured data. It is the heart of the system.
 
-The cascade, in priority order:
-1. **Docling** (docling 2.124.0+) — layout detection, structure, tables, markdown. Primary engine.
-2. **PaddleOCR** — image OCR fallback (paddlex/paddlepaddle).
-3. **EasyOCR** — image OCR fallback (torch CPU).
-4. **RapidOCR** — image OCR (requires onnxruntime; see requirements.txt).
-5. **Tesseract** (pytesseract) — last-resort image OCR.
+### OCR cascade (priority order)
+1. **Docling** (2.124.0+) — layout/structure/markdown. Primary engine, run with a **fast path**: `PdfPipelineOptions(do_ocr=False, do_table_structure=False)` — cuts a 4-page PDF from ~90s to ~25s. If the fast path throws or returns nothing, it **falls back to full default conversion** (never fails silently).
+2. **PaddleOCR** → **EasyOCR** → **RapidOCR** (needs onnxruntime) → **Tesseract** — image OCR fallbacks; each tries 5 preprocessing variants (original, contrast/grayscale, 2× upscale, binarized, denoised), keeping the longest text result.
 
-For each image engine, it tries **5 preprocessing variants** (original, contrast/grayscale, upscaled 2×, binarized threshold, denoised) and keeps the **longest** text result across all engines.
+### Scanned-PDF handling (no text layer)
+- pypdf text extraction first (instant)
+- Then PyMuPDF (fitz) rasterizes pages @200dpi → OCR cascade per page
+
+### Text-based files
+`.json/.md/.csv/.txt/.xml/.html/.log` are read directly via `_read_fallback()` — NEVER through image OCR (which caused `cannot identify image file` 500s historically).
 
 Post-OCR processing (also in `pipeline.py`):
-- **Entity extraction** via regex: money amounts, dates, phone numbers, emails, invoice numbers, CNIC IDs.
-- **Classification** into a 10-category taxonomy (invoice, bank_statement, tax, employment, immigration, receipt, identity, order, legal, personal) with confidence scores.
+- **Entity extraction** via regex: money amounts, dates, phone numbers, emails, invoice numbers, CNIC IDs, account numbers, order numbers, registration numbers, names.
+- **Content-adaptive classification** into an 11-category taxonomy (invoice, bank_statement, tax, employment, immigration, receipt, identity, order, legal, personal, **metadata**) using:
+  - Weighted keyword scoring (distinctive terms carry higher weight)
+  - Negative signals (e.g., "order to make" down-ranks `order`; "master guide" down-ranks `tax`/`identity`)
+  - Entity hints (extracted `registration_numbers` boost `tax`; `invoice_numbers` boost `invoice`)
+  - `_MIN_CONFIDENCE = 0.50` — below this, batch processor quarantines
+- **Typed field extraction** per document type: invoice → `invoice_number/total_amount/due_date/vendor`; tax → `registration_no/tax_year/taxpayer`; bank → `account_no`; etc. Only non-empty fields returned.
 - **Cleaning**: unicode smart-quote/dash normalization, control-char removal, whitespace collapse, blank-line removal.
-- **Output**: a JSON report with `cleaned_text`, `markdown`, `tables_found`, `entities`, `document_type`, `engine`, `ocr_engine_report`.
+- **Output**: a JSON report with `cleaned_text`, `markdown`, `tables`, `tables_found`, `page_count`, `entities`, `fields`, `document_type`, `classification_confidence`, `engine`, `ocr_engine_report`.
+
+**Text-based file routing:** see "Text-based files" above.
+
+---
+
+## 5b. BATCH PROCESSOR (`batch_processor.py`)
+
+**Purpose:** walk the entire document corpus (555+ files), send each to the Railway OCR pipeline, and auto-organize/rename by content.
+
+- **Folder-aware classification correction**: uses the existing taxonomy folder as a prior. If the classifier confidence < 0.70 AND the source folder maps to a doc_type, the folder wins (e.g., file in `2. Taxation_and_FBR` → `tax` regardless of classifier noise).
+- **Quarantine rule**: confidence < 0.50 → `uncategorized` → routed to `00. _QUARANTINE` for human review.
+- **Content-driven rename**: e.g., `Tax_3410422179127.pdf`, `Invoice_YS-2026-0042.pdf`, `Meta_<original_name>.md` for metadata files.
+- **State file**: `.docai_batch_state.json` tracks processed docs by SHA256 digest (idempotent re-runs).
+- **Dry-run mode**: `--dry-run` calls the API for classification but doesn't move files.
+- **Issue rollup**: prints LOW-CONF, UNCATEGORIZED, and HTTP error summary at end.
+
+Usage:
+```bash
+cd ~/projects/ai-cli
+# Classification dry-run (API calls, no file changes):
+.venv/bin/python batch_processor.py '<src>' '<dest>' --dry-run
+# Apply stored classifications — copy+rename into taxonomy folders (no API calls):
+.venv/bin/python batch_processor.py '<src>' '<dest>' --organize-only
+# Full live pass (classify + copy):
+.venv/bin/python batch_processor.py '<src>' '<dest>'
+```
+
+- **Parallel workers:** `BATCH_WORKERS=8` (default 6) via env var; uploads run concurrently against Railway.
+- **Async-aware:** uploads return `201 {status: queued}` → batch polls `GET /documents/{id}` every 5s until `done`/`failed` (15-min per-doc deadline). Handles legacy sync responses too.
+- **Idempotent:** SHA256-digest state file `.docai_batch_state.json` — successful docs are never re-sent; failures auto-retry on next run.
+- **PERFORMANCE (measured 2026-09-03):** ~25s/doc single-stream, ~170 docs/min with 8 workers → 555-file corpus in ~8 min.
+- **--organize-only:** replays stored `folder`/`new_name` from state; collision-safe (`_1`, `_2` suffixes — needed because multiple docs of the same person share a CNIC/registration).
+
+---
+
+## 5b-2. THE ORGANIZED CORPUS (current state, 2026-09-03)
+
+- **Source:** `C:\Users\ateeb\OneDrive\Documents\Documents\` (555 files, 12 taxonomy folders, NEVER modified).
+- **Organized copy:** `C:\Users\ateeb\OneDrive\Documents\Documents_organized\` — **547 files** copied + renamed; originals untouched.
+- 8 SHA256-duplicate files intentionally excluded (identical content already filed).
+- 364 collision-renames (`_1`, `_2`…) — expected: same-person docs share CNIC/registration.
+- Distribution: tax 127, legal 103, identity 86, bank_statement 74, immigration 49, education 34, invoice 31, personal 25, corporate 7, medical 6, metadata 5, order/receipt/employment 4. Quarantine holds `Meta_*` planning manifests.
+- **The state file is the classification source of truth.** Deleting it forces a full re-classification; keep it.
+- All 547 docs are also rows in Postgres with entities/fields/cleaned_text — searchable via `/search`.
+
+---
+
+## 5c. SEMANTIC STORAGE & SEARCH (LIVE — Postgres)
+
+- **Status: ACTIVE.** Health endpoint reports `"storage": "postgres"` (SQLite fallback only when `DATABASE_URL` unset, e.g. local dev).
+- **Wiring:** `DATABASE_URL` on the `docai` service = reference `${{ Postgres.DATABASE_URL }}` — resolved by Railway, no secrets in code. Set via `railway variable set 'DATABASE_URL=${{ Postgres.DATABASE_URL }}' --service docai`.
+- **NOTE:** two Postgres services exist in the project (`Postgres` f59f9ecd…, `Postgres-WbT1` b2b9ada4…) from an accidental double `railway add`. The reference targets `Postgres`. Cleanup pending (HUMAN GATE — confirm before deleting either).
+- `documents` table: `id, name, status(queued/done/failed), created_at, doc_type, classification_confidence, fields(json), entities(json), tables(json), cleaned_text, markdown, source_format`.
+- **`/search?q=<term>&doc_type=<type>`** — matches across entities/fields/cleaned_text/filename (ILIKE on Postgres, LIKE on SQLite).
+- Async status lifecycle: `queued → (background pool) → done | failed`. `GET /documents/{id}` reflects live status.
 
 ---
 
@@ -199,11 +261,15 @@ postman collection run full_ocr_collection.json --reporters cli
 - **Exit code 1** = one or more assertions failed; **exit 0** = all green.
 - The "No authorization data found / postman login" warnings are **benign** — they only gate cloud publishing of run results, not local execution.
 
-Run any single request quickly (e.g. manually):
+Run any single request quickly:
 ```bash
-curl -s -m 280 \
-  -F 'file=@invoice_test.png' \
-  https://docai-production-424b.up.railway.app/documents
+# ASYNC (default, any file size — returns 201 queued instantly, poll for result):
+curl -s -F 'file=@big_55page.pdf' https://docai-production-424b.up.railway.app/documents
+# → {"id":"doc-…","status":"queued","poll":"/documents/doc-…"}
+curl -s https://docai-production-424b.up.railway.app/documents/doc-…   # poll until status=done
+
+# SYNC (small files — blocks until full result):
+curl -s -F 'file=@invoice_test.png' 'https://docai-production-424b.up.railway.app/documents?sync=true'
 ```
 
 ---
@@ -211,12 +277,12 @@ curl -s -m 280 \
 ## 9. TESTING / VERIFICATION GATES
 
 **Before declaring a change "done", ALL of these must pass:**
-1. `railway logs --build` shows a clean build (no `VOLUME` directive — Railway rejects it; use Railway Volumes instead) and no `ModuleNotFoundError`.
-2. `curl -s …/health` returns `{"status":"ok","service":"docai","version":"0.2.0"}`.
-3. `postman collection run full_ocr_collection.json --reporters cli` → **0 failures**, 10 assertions.
-4. Real document upload (`invoice_test.png`) returns `status: done` with non-empty `entities.invoice_numbers`.
-5. Document retrieval `GET /documents/{id}` round-trips from the store.
-6. Code committed & pushed to `ateebfaiz/docai` and **deployed** (deployment id visible).
+1. `railway logs --build` shows a clean build (no `VOLUME` directive — Railway rejects it) and no `ModuleNotFoundError`.
+2. `curl -s …/health` returns `{"status":"ok","service":"docai","version":"0.3.0","storage":"postgres"}`.
+3. `postman collection run full_ocr_collection.json --reporters cli` → **0 failures**.
+4. Real upload returns `201 queued` (async) and `GET /documents/{id}` reaches `status: done` with non-empty entities.
+5. Small-file sync check: `?sync=true` returns full result with `entities.invoice_numbers` non-empty.
+6. Code committed & pushed to `ateebfaiz/docai` and **deployed** (deployment id visible in `railway status`).
 
 **Only after #1–#6 pass**, update this CLAUDE.md if behavior changed.
 
@@ -224,14 +290,15 @@ curl -s -m 280 \
 
 ## 10. SECURITY CONTROLS (BINDING)
 
-1. **Never daughter security keys.** Do not paste the GitHub PAT, Railway tokens, Bedrock bearer tokens, or any secret into chat, logs, commits, or this file.
-2. **The git remote URL contains an embedded PAT** (`gho_…`). Any `git remote -v`/`git config -l` output must be treated as SECRET — sanitize before pasting.
-3. **Windows `~/.aws` is NOT duplicated into WSL.** AWS creds live only where the signed-in project needs them; do not copy wholesale.
+1. **Never paste secrets** (GitHub PATs, Railway tokens, Bedrock bearer tokens) into chat, logs, commits, or this file.
+2. **Git remote is SSH** (`git@github.com:ateebfaiz/docai.git`) via the WSL `id_ed25519_github` key. **NEVER revert to an HTTPS URL with an embedded PAT** — that was a real credential leak that got fixed (2026-09-03). If you ever see `https://gho_…@github.com` in a remote, treat it as an incident.
+3. **Windows `~/.aws` is NOT duplicated into WSL.** AWS creds live only where the signed-in project needs them.
 4. **Separate SSH keys:** Windows uses its own `id_ed25519`; WSL uses a **separate** `id_ed25519_github` (registered to GitHub as "ateeb-wsl"). Never copy the Windows private key into WSL.
-5. **Postman webhook values in collections are placeholders only** — never commit real webhook URLs with credentials.
-6. WSL inherits the Railway session via a copied config (`~/.railway/config.json` ← `C:\Users\ateeb\.railway\config.json`). That file holds `accessToken`; never commit or paste it.
-7. The app writes only to `/data/` (uploads + SQLite). No public writes, no public buckets.
+5. Postman collection values are placeholders only — never commit real webhook URLs with credentials.
+6. Railway auth lives in `~/.railway/config.json` (copied from Windows). It holds `accessToken`/`refreshToken` — never commit, paste, or print it.
+7. The app writes only to `/data/` (uploads + SQLite) and Postgres. No public writes, no public buckets.
 8. **No unauthenticated model/OCR endpoint exposed.** The Railway service is the only surface.
+9. **PII corpus:** the Documents folder contains CNICs, passports, bank statements, legal complaints. Treat filenames, extracted text, and search results as sensitive; never dump full OCR text of real documents into logs or commits.
 
 ---
 
@@ -240,15 +307,19 @@ curl -s -m 280 \
 | Symptom | Cause | Fix |
 |---|---|---|
 | `ModuleNotFoundError: No module named 'pipeline'` | old Dockerfile deployed (before `COPY pipeline.py .`) | ensure current Dockerfile has `COPY pipeline.py .`; redeploy |
-| Railway build `dockerfile invalid: docker VOLUME … not supported` | `VOLUME /data` in Dockerfile | **remove `VOLUME`**, use Railway Volumes service feature |
-| `operator torchvision::nms does not exist` | torch pinned CPU but torchvision pulled from PyPI (CUDA-linked) | declare `torch` AND `torchvision` both under `[tool.uv.sources]` with `index = "pytorch-cpu"` |
-| `onnxruntime is not installed` (RapidOCR) | rapidocr needs its onnx engine | keep `onnxruntime` in requirements.txt ; local diagnostics may show engines "unavailable" — fine on dev box |
+| Railway build `dockerfile invalid: docker VOLUME … not supported` | `VOLUME /data` in Dockerfile | **remove `VOLUME`** |
+| `operator torchvision::nms does not exist` | torch pinned CPU but torchvision pulled CUDA-linked from PyPI | declare `torch` AND `torchvision` both under `[tool.uv.sources]` with `index = "pytorch-cpu"` |
+| `onnxruntime is not installed` (RapidOCR direct) | rapidocr's own engine needs it | keep `onnxruntime` in requirements.txt; docling's internal RapidOCR path works regardless |
+| `cannot identify image file … .pdf` | OCR cascade fired on a PDF (docling returned empty text) | CURRENT CODE FIXED: fast-path fallback + pypdf/PyMuPDF; if you reintroduce it, check `run_full_pipeline` guards |
+| Docling suddenly slow (60-90s/PDF) | table-structure model + internal OCR enabled | verify fast path (`do_ocr=False, do_table_structure=False`) is applied and its try/except fallback didn't trigger |
+| **HTTP 502 "Application failed to respond"** on big uploads | synchronous processing exceeded Railway edge timeout | USE ASYNC: default upload → `201 queued` → poll. Never `?sync=true` for large files |
 | `railway` resolves to `/mnt/c/…npm…` | Windows shim on PATH | use native `~/.railway/bin/railway` (Law 3) |
-| `postman` on Windows | you're on Windows shell | run under WSL with native `/usr/local/bin/postman` |
-| `appendWindowsPath=false` caused tools to "not be found" | you were relying on a Windows binary | install/use the native Linux binary (see §4.3) |
-| blue boxes:“Multiple services found. Specify via --service” | repo has >1 service | always `railway up --service docai` and `railway status` in project root |
-| `railway` not on PATH in non-interactive shell | `~/.bashrc`/`~/.profile` not sourced | prepend to PATH inside the command: `export PATH="$HOME/.railway/bin:$PATH"` |
-| long first build (torch + paddlepaddle + easyocr) | heavy deps install in cloud | expected ~15-25 min on first deploy; subsequent are cached |
+| "Multiple services found. Specify via --service" | repo has >1 service | always `railway up --service docai` |
+| `railway` not on PATH in non-interactive shell | `.bashrc` not sourced | `export PATH="$HOME/.railway/bin:$PATH"` inline |
+| `railway add --database postgres` hangs | interactive prompt | it may still create the service — check `railway api` service list; avoid double-adds |
+| `/tmp/…` files vanish between WSL calls | WSL VM recycled /tmp | write temp files to `$HOME` or `/mnt/c/…` scratchpad instead |
+| wsl.exe background output logs empty | output buffering quirk | redirect inside WSL to a file (`> /home/ateeb/x.log`) and read that file |
+| First deploy slow (torch + paddlepaddle + easyocr) | heavy deps in cloud | expected 15-25 min; cached after |
 
 ---
 
@@ -264,7 +335,9 @@ Never "test locally then forget to deploy." The **deployed** state is the source
 
 - Raising resources above 24 vCPU / 24 GB / 100 GB disk.
 - Running `railway config migrate` (IaC migration).
-- Deleting the project or the GitHub repo.
+- Deleting the project, the GitHub repo, or either Postgres service (`Postgres` / `Postgres-WbT1`).
+- **Running the batch WITHOUT `--dry-run` against the corpus** (i.e., live classify+copy) — the 2026-09-03 organize pass was explicitly approved; new passes need new approval.
+- Deleting or regenerating `.docai_batch_state.json` (it is the classification source of truth).
 - Installing OS-level packages that increase WSL footprint beyond the plan.
 - Any change to `/etc/wsl.conf` or `~/.wslconfig`.
 - Exposing a new public endpoint without an authenticated boundary.

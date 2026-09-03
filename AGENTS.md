@@ -1,64 +1,53 @@
-# DocAI Unified Architecture — Agent & Human Rules
+# DocAI — Agent & Human Rules (condensed)
 
-> **READ THIS BEFORE ANY CHANGE.** This binds all AI agents and humans. Covers WSL2 dev machine + Railway/GitHub cloud.
+> Full detail in [CLAUDE.md](./CLAUDE.md). This binds all agents and humans.
 
-## THE ENVIRONMENT LAWS (non-negotiable)
+## ENVIRONMENT LAWS
+1. **Everything runs in WSL2 Ubuntu** (`Ubuntu-24.04`). Project root: `/home/ateeb/projects/ai-cli/` (ext4). NEVER work in `/mnt/c/…` for project files.
+2. **Windows = thin control plane only** (wsl.exe invocation, token storage, `\\wsl.localhost` file access). Never runs Python/pipeline.
+3. **Windows PATH purged** (`appendWindowsPath=false`). Native binaries only: `~/.railway/bin/railway`, `/usr/local/bin/postman`, `~/.local/bin/uv`.
+4. **No Docker Desktop locally** — Railway builds from the committed Dockerfile.
+5. **No unauthenticated OCR/model endpoints.** FastAPI is the only public surface.
 
-1. **EVERYTHING runs in WSL2 Ubuntu.** All dev, Python, OCR/parsing, git, tests happen inside `Ubuntu-24.04`. Canonical project root: `/home/ateeb/projects/ai-cli/` (ext4). NEVER work in `/mnt/c/…` for active files. Canonical: Ubuntu 24.04.4 LTS / Python 3.11.16 / uv.
-2. **Windows is a thin control plane ONLY.** Windows (PowerShell, `wsl.exe`) only: (a) invokes WSL, (b) holds auth tokens for `gh`/`railway`/`postman`, (c) reads files at `\\wsl.localhost\Ubuntu-24.04\home\ateeb\projects`. Windows NEVER runs Python/pipeline.
-3. **Windows PATH is purged from WSL** (`[interop] appendWindowsPath=false`). Use native Linux binaries: `~/.railway/bin/railway` (5.47.2), `/usr/local/bin/postman` (1.53.0), `~/.local/bin/uv`. If a tool resolves to `/mnt/c/…`, that's the Windows shim — stop and use native.
-4. **No Docker Desktop locally.** Builds happen on Railway from the committed Dockerfile.
-5. **Never expose an unauthenticated OCR/model port publicly.** Everything sits behind FastAPI.
+## HOSTING
+- GitHub `ateebfaiz/docai` — remote is **SSH** (`git@github.com:…`). NEVER revert to HTTPS-with-PAT (that was a real leak, fixed 2026-09-03).
+- Railway project `docai` (ID `8590679c-…`), service `docai`, region sfo. URL: https://docai-production-424b.up.railway.app
+- Resources: 24 vCPU / 24 GB / 100 GB disk (via GraphQL `serviceInstanceUpdate`, region key top-level).
+- **Postgres LIVE** — `DATABASE_URL=${{ Postgres.DATABASE_URL }}` reference. Two Postgres services exist (double `railway add`); cleanup is a HUMAN GATE.
 
-## HOSTING FACTS
-- GitHub: `ateebfaiz/docai` (public) https://github.com/ateebfaiz/docai
-- Railway project `docai`, Project ID `8590679c-0203-4810-93fe-097ea3c23a02`, Service ID `6d17984a-…`, region `sfo`
-- Public URL: **https://docai-production-424b.up.railway.app**
-- Max resources (authorized): 24 vCPU / 24 GB RAM / 100 GB disk (Railway GraphQL, region key `sfo` top-level).
+## API (v0.3.0)
+- `GET /health` → `{"status":"ok","storage":"postgres"}`
+- `POST /documents` → **async default**: `201 {id, status:"queued", poll}` → poll `GET /documents/{id}` until `done|failed`. Server-side pool: `PIPELINE_WORKERS` (default 8).
+- `POST /documents?sync=true` → blocks with full result. **Never use for large files** (Railway edge 502s long requests — this bit us with a 55-page PDF).
+- `GET /documents[/{id}]`, `GET /search?q=&doc_type=` — Postgres-backed, ILIKE over entities/fields/text.
 
-## HARDWARE / RESOURCE CEILING
-`~/.wslconfig`: memory=8GB swap=4GB (autoMemoryReclaim under [experimental]). Railway service: cpuLimit=24, memoryLimitMB=24576, diskLimitMB=102400. Do not exceed without approval.
+## PIPELINE
+Cascade: **Docling fast path** (`do_ocr=False, do_table_structure=False`, fallback to full) → PaddleOCR → EasyOCR → RapidOCR → Tesseract (5 image variants each). Scanned PDFs: pypdf → PyMuPDF rasterize → OCR. Text files (.json/.md/…) read directly — never image-OCR'd.
+Adaptive classify: weighted keywords + negatives + entity hints; 11 categories incl. `metadata`; `_MIN_CONFIDENCE=0.50`. Typed fields per type (invoice→invoice_number/total_amount…, tax→registration_no/tax_year/taxpayer…).
 
-## FILES
-`/home/ateeb/projects/ai-cli/`: `.venv`, `src/ai_cli/api.py` (FastAPI entry), `pipeline.py` (OCR pipeline, MUST be at repo root), `cli.py` (local Typer), `Dockerfile`, `requirements.txt`, `pyproject.toml`, `uv.lock`, Postman collections (`full_ocr_collection.json`, `test_api_collection.json`), fixtures.
+## BATCH PROCESSOR
+```bash
+cd ~/projects/ai-cli && .venv/bin/python batch_processor.py '<src>' '<dest>' [--dry-run|--organize-only]
+```
+- Parallel (`BATCH_WORKERS=8`), async-aware (polls), idempotent via `.docai_batch_state.json` (SHA256 digests).
+- **State file = classification source of truth.** Deleting it forces full re-classification (HUMAN GATE).
+- Folder-aware correction: low classifier confidence + existing taxonomy folder → folder wins; <0.5 → quarantine.
+- Measured: ~25s/doc, ~170 docs/min at 8 workers.
 
-## PIPELINE (pipeline.py)
-Cascade: Docling → PaddleOCR → EasyOCR → RapidOCR → Tesseract. Each image engine tests 5 preprocessing variants (original, contrast/grayscale, upscale 2x, binarized, denoised), keeps longest text. Then: entity regex (money, dates, phones, emails, invoice numbers, CNIC), 10-category classification, unicode/whitespace cleaning. Output JSON report.
+## CORPUS STATE (2026-09-03)
+- Source `Documents/` (555 files) **NEVER modified**. Organized copy `Documents_organized/` holds **547** renamed files (tax 127, legal 103, identity 86, bank 74, immigration 49, …; `Meta_*` manifests quarantined). 8 SHA256 dupes excluded; 364 collision suffixes (`_1`,`_2`) expected (same-person docs share CNIC).
+- All 547 rows in Postgres with entities/fields — searchable.
 
-## RAILWAY OPS
-- `export PATH="$HOME/.railway/bin:$PATH"`; `railway status`, `railway logs`, `railway logs --build`
-- Deploy: `cd ~/projects/ai-cli && railway up --service docai`
-- GraphQL scaling: `echo '<mutation>' | railway api` (serviceInstanceUpdate with multiRegionConfig)
-- Do NOT run `railway config migrate` without approval (deprecation warnings are benign).
+## VERIFICATION GATES (all must pass)
+1. Clean build; 2. health = `0.3.0` + `storage:postgres`; 3. Postman `full_ocr_collection.json` 0 failures; 4. async upload→poll→done with entities; 5. sync small-file check; 6. pushed + deployed.
 
-## POSTMAN TESTS
-- `cd ~/projects/ai-cli && postman collection run full_ocr_collection.json --reporters cli`
-- Exit 1 = failure. "No authorization data" warnings are benign (only gate cloud publish).
+## SECURITY
+No secrets in chat/logs/commits/files. Railway config (`~/.railway/config.json`) holds tokens — never print. Windows `~/.aws` never copied to WSL. Separate SSH keys per environment. PII corpus (CNICs/passports/bank statements) — treat extracted text as sensitive.
 
-## VERIFICATION GATES (all must pass before "done")
-1. Clean build (no VOLUME directive, no ModuleNotFoundError)
-2. `curl …/health` → `{"status":"ok","service":"docai","version":"0.2.0"}`
-3. Postman full_ocr suite → 0 failures (10 assertions)
-4. Real upload `invoice_test.png` → `status:done`, non-empty `entities.invoice_numbers`
-5. `GET /documents/{id}` round-trip OK
-6. Committed + pushed + deployed
+## KEY TRAPS (full table in CLAUDE.md)
+502 on big uploads → use async. `cannot identify image file .pdf` → OCR fired on PDF; fast-path fallback guards exist, don't remove. `/tmp` vanishes between WSL calls → use `$HOME`. wsl.exe background logs empty → redirect inside WSL to a file. `VOLUME` in Dockerfile rejected by Railway. torchvision must be CPU-pinned alongside torch.
 
-## SECURITY (binding)
-- NEVER paste GitHub PAT, Railway tokens, or Bedrock bearer token into chat/logs/commits/files.
-- **The git remote URL has an embedded PAT (`gho_…`)** — treat any `git remote -v` output as SECRET.
-- Windows `~/.aws` NOT duplicated to WSL. Separate SSH keys (WSL uses `id_ed25519_github`, never copy Windows private key).
-- Railway config in `~/.railway/config.json` holds accessToken — never commit/paste.
-- App writes only to `/data/` (uploads + SQLite). No public buckets, no unauth endpoints.
+## HUMAN-ONLY GATES
+Raise resources; `railway config migrate`; delete project/repo/Postgres services; **live (non-dry-run) batch passes**; delete `.docai_batch_state.json`; OS package installs; `.wslconfig`/`wsl.conf` changes; new public endpoints.
 
-## COMMON TRAPS
-- `ModuleNotFoundError: pipeline` → Dockerfile lacks `COPY pipeline.py .` → add & redeploy
-- Build `VOLUME not supported` → remove `VOLUME` from Dockerfile, use Railway Volumes
-- `operator torchvision::nms` → pin BOTH torch & torchvision to `pytorch-cpu` index in pyproject.toml
-- `railway` resolves to `/mnt/c/…npm…` → use native `~/.railway/bin/railway`
-- "Multiple services found" → always `--service docai`
-- First deploy slow (torch/paddle/easyocr) ~15-25 min, cached after
-
-## HUMAN-ONLY GATES (do NOT bypass)
-Raise resources above 24/24/100; `railway config migrate`; delete project/repo; OS package installs increasing footprint; change .wslconfig/wsl.conf; expose new public endpoint without auth.
-
-*Last updated 2026-09-03. Update whenever any rule/endpoint/resource/environment changes.*
+*Updated 2026-09-03.*

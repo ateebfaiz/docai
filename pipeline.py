@@ -190,14 +190,24 @@ def ocr_image(path: str | Path) -> tuple[str, dict]:
 # ---------------------------------------------------------------------------
 
 def parse_document(path: str | Path) -> dict[str, Any]:
-    """Docling: PDF/image/docx/xlsx/html → structure + tables + md."""
+    """Docling: PDF/image/docx/xlsx/html → structure + tables + md.
+    Fast path: disable table-structure model and internal OCR (major CPU hogs).
+    Our OCR cascade handles image regions; pdfplumber-style text extraction handles text layers.
+    """
     result: dict[str, Any] = {"markdown": "", "tables": [], "text": "", "error": None, "page_count": 0}
     conv = _docling()
     if conv is None:
         result["error"] = "docling unavailable"
         return result
     try:
-        doc = conv.convert(str(path)).document
+        from docling.datamodel.pipeline_options import PdfPipelineOptions
+        opts = PdfPipelineOptions()
+        opts.do_ocr = False                  # our cascade handles OCR when needed
+        opts.do_table_structure = False      # biggest CPU hog; tables come from text layer
+        opts.generate_page_images = False
+        opts.generate_picture_images = False
+        conv.pipeline_options = opts
+        doc = conv.convert(str(path), pipeline_options=opts).document
         result["markdown"] = doc.export_to_markdown()
         result["text"] = doc.export_to_text()
         tables = []
@@ -344,13 +354,23 @@ _TAXONOMY: dict[str, list[tuple[str, float]]] = {
         ("profile", 2), ("personal information", 2), ("address", 1),
         ("contact", 1), ("mobile", 1), ("subscriber", 1),
     ],
+    "metadata": [
+        ("manifest", 4), ("master guide", 4), ("reorganization", 4),
+        ("execution plan", 3), ("metadata", 3), ("legacy", 2),
+        ("documentation", 2), ("guide", 2), ("readme", 2),
+    ],
 }
+
+# Minimum confidence to trust an automated classification; below this we quarantine.
+_MIN_CONFIDENCE = 0.50
 
 # Negative signals that down-rank a category (content-aware: avoid false positives)
 _NEGATIVE: dict[str, list[str]] = {
     "order": ["order to make", "tax order"],       # FBR "Order" doc is tax, not order
     "invoice": ["tax invoice", "order for"],       # tax invoice ≠ invoice
     "personal": ["registration", "self assessment"],
+    "tax": ["master guide", "manifest", "reorganization", "execution plan", "metadata"],
+    "identity": ["manifest", "master guide", "reorganization", "execution plan", "metadata"],
 }
 _NEGATIVE_WEIGHT = -2.0
 

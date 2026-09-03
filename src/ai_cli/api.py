@@ -177,6 +177,42 @@ class _Store:
             conn.close()
         return [_row_to_dict(r) for r in rows]
 
+    def update(self, doc_id: str, **fields):
+        """Update selected columns for a document (used by async pipeline completion)."""
+        allowed = {"status", "doc_type", "classification_confidence", "fields",
+                   "entities", "tables", "cleaned_text", "markdown"}
+        sets, vals = [], []
+        for k, v in fields.items():
+            if k not in allowed:
+                continue
+            if k in ("fields", "entities", "tables"):
+                v = json.dumps(v)
+                col = k
+            else:
+                col = k
+            ph = "%s" if self.backend == "postgres" else "?"
+            sets.append(f"{col} = {ph}")
+            vals.append(v)
+        if not sets:
+            return
+        sql = f"UPDATE documents SET {', '.join(sets)} WHERE id = {('%s' if self.backend == 'postgres' else '?')}"
+        vals.append(doc_id)
+        if self.backend == "postgres":
+            import psycopg2
+            conn = self._pg_conn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(sql, tuple(vals))
+                conn.commit()
+            finally:
+                conn.close()
+        else:
+            import sqlite3
+            conn = sqlite3.connect(DB_DIR / "docai.db")
+            conn.execute(sql, tuple(vals))
+            conn.commit()
+            conn.close()
+
     def search(self, q: str = "", doc_type: Optional[str] = None) -> list[dict]:
         """Semantic search over documents. Postgres uses ILIKE on semantic fields; SQLite LIKE."""
         where = []
@@ -242,6 +278,10 @@ def _row_to_dict(row):
 
 store = _Store()
 
+# Bounded background pipeline pool — caps concurrent heavy OCR jobs
+from concurrent.futures import ThreadPoolExecutor
+_PIPELINE_POOL = ThreadPoolExecutor(max_workers=int(os.environ.get("PIPELINE_WORKERS", "8")))
+
 
 # ---------------------------------------------------------------------------
 # Models
@@ -276,8 +316,12 @@ async def health():
     }
 
 
-@app.post("/documents", response_model=DocumentResponse, status_code=201)
-async def upload_document(file: UploadFile = File(...)):
+@app.post("/documents", status_code=201)
+async def upload_document(file: UploadFile = File(...), sync: bool = False):
+    """Upload a document.
+    Default: async — returns 201 immediately with status=queued; pipeline runs in background.
+    ?sync=true — processes inline and returns the full result (small files).
+    """
     doc_id = f"doc-{uuid.uuid4().hex[:12]}"
     safe_name = Path(file.filename or "upload").name
     ext = Path(safe_name).suffix.lower()
@@ -286,41 +330,47 @@ async def upload_document(file: UploadFile = File(...)):
     with dest.open("wb") as fh:
         shutil.copyfileobj(file.file, fh)
 
+    created = datetime.now(timezone.utc).isoformat()
+    store.insert({
+        "id": doc_id, "name": safe_name, "status": "queued", "created_at": created,
+        "doc_type": None, "classification_confidence": 0,
+        "fields": {}, "entities": {}, "tables": [], "source_format": ext,
+    })
+
+    if sync:
+        return _process_and_store(doc_id, safe_name, dest, created, ext, sync=True)
+
+    _PIPELINE_POOL.submit(_process_and_store, doc_id, safe_name, dest, created, ext, False)
+    return {
+        "id": doc_id, "name": safe_name, "status": "queued",
+        "created_at": created, "poll": f"/documents/{doc_id}",
+        "detail": "processing in background; poll the poll URL until status != queued/processing",
+    }
+
+
+def _process_and_store(doc_id: str, safe_name: str, dest: Path, created: str, ext: str, sync: bool):
+    """Run the full pipeline and persist the result. Used by both sync and async paths."""
     try:
         report = run_full_pipeline(dest)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"pipeline failed: {e}")
+        store.update(doc_id, status="failed")
+        if sync:
+            raise HTTPException(status_code=500, detail=f"pipeline failed: {e}")
+        return
 
-    doc = {
-        "id": doc_id,
-        "name": safe_name,
-        "status": "done",
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "doc_type": report.get("document_type"),
-        "classification_confidence": report.get("classification_confidence", 0),
-        "fields": report.get("fields", {}),
-        "entities": report.get("entities", {}),
-        "tables": report.get("tables", []),
-        "cleaned_text": report.get("cleaned_text", ""),
-        "markdown": report.get("markdown", ""),
-        "source_format": ext,
-    }
-    store.insert(doc)
-
-    return DocumentResponse(
-        id=doc_id,
-        name=safe_name,
+    store.update(
+        doc_id,
         status="done",
-        created_at=doc["created_at"],
-        doc_type=doc["doc_type"],
-        classification_confidence=doc["classification_confidence"],
-        fields=doc["fields"],
-        entities=doc["entities"],
-        tables_found=len(doc["tables"]),
-        page_count=report.get("page_count", 0),
-        ocr_text=doc["cleaned_text"][:2000],
-        markdown=doc["markdown"][:5000],
+        doc_type=report.get("document_type"),
+        classification_confidence=report.get("classification_confidence", 0),
+        fields=report.get("fields", {}),
+        entities=report.get("entities", {}),
+        tables=report.get("tables", []),
+        cleaned_text=report.get("cleaned_text", ""),
+        markdown=report.get("markdown", ""),
     )
+    if sync:
+        return _to_response(store.get(doc_id))
 
 
 @app.get("/documents/{document_id}", response_model=DocumentResponse)

@@ -171,6 +171,30 @@ def main(src: str, dest_root: str, dry_run: bool = False, limit: int = 0):
                 print(f"[{idx}/{total}] HTTP {r.status_code} {f.name}: {r.text[:80]}")
                 return
             data = r.json()
+
+            # Async flow: upload returns status=queued → poll until done/failed
+            if data.get("status") in ("queued", "processing"):
+                doc_id = data["id"]
+                deadline = time.time() + 900  # 15 min per doc
+                while time.time() < deadline:
+                    time.sleep(5)
+                    g = client.get(f"{API}/documents/{doc_id}")
+                    if g.status_code != 200:
+                        continue
+                    gd = g.json()
+                    if gd.get("status") in ("done", "failed"):
+                        data = gd
+                        break
+                if data.get("status") in ("queued", "processing"):
+                    issues.append(f"POLL-TIMEOUT: {f.name} — {doc_id}")
+                    print(f"[{idx}/{total}] POLL-TIMEOUT {f.name}")
+                    return
+
+            if data.get("status") == "failed":
+                issues.append(f"PIPELINE-FAILED: {f.name}")
+                print(f"[{idx}/{total}] FAILED {f.name}")
+                return
+
             doc_type = data.get("doc_type", "uncategorized")
             entities = data.get("entities") or {}
             confidence = data.get("classification_confidence", 0)

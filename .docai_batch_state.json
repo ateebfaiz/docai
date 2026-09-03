@@ -4625,6 +4625,303 @@
       "new_name": "Invoice_PostEx_Shipping_Label_MS_Penta_Square_DHA_Lahore_Yasmeen_and_Sons.pdf",
       "folder": "8. ECommerce_and_Marketing",
       "processed_at": "2026-09-03T08:43:04.187267+00:00"
+    },
+    "3fb2f58175fcf44c6fdc5e1f46a20db3beaf07eabaf638bfde454de3e8a13d67": {
+      "doc_id": "doc-8798968d2cb9",
+      "source": "3. Financial_and_Banking/Account_Opening_and_Loans/Bank_Alfalah_Account_Opening_Form_Yasmeen_Tahira_072025.pdf",
+      "doc_type": "bank_statement",
+      "confidence": 0.7,
+      "new_name": "Statement_Bank_Alfalah_Account_Opening_Form_Yasmeen_Tahira_072025.pdf",
+      "folder": "3. Financial_and_Banking",
+      "processed_at": "2026-09-03T09:03:28.949366+00:00"
+    },
+    "cee0762322a3ac447b230443ce499fc1174468604b11356d8ae2193b20cc1daf": {
+      "doc_id": "doc-388b00b0dc57",
+      "source": "2. Taxation_and_FBR/Income_Tax_Returns_and_Wealth_Statements/FBR_Iris_Income_Tax_Return_FBR_Income_Tax_Return_Acknowledgment_ArsalNawaz_TY2025_25NOV2025.pdf",
+      "doc_type": "tax",
+      "confidence": 0.7,
+      "new_name": "Tax_FBR_Iris_Income_Tax_Return_FBR_Income_Tax_Return_Acknowledgment_ArsalNawaz_TY2025_25NOV2025.pdf",
+      "folder": "2. Taxation_and_FBR",
+      "processed_at": "2026-09-03T09:03:35.624245+00:00"
+    },
+    "0912db4098c7e4da8573ec5f08e2ab4858d3870a5da1dfb11ff23217fb34eac5": {
+      "doc_id": "doc-0495bd671f1e",
+      "source": "2. Taxation_and_FBR/Income_Tax_Returns/FBR_Income_Tax_Return_Muneeb_Faiz_TY2024_093025.pdf",
+      "doc_type": "tax",
+      "confidence": 0.7,
+      "new_name": "Tax_FBR_Income_Tax_Return_Muneeb_Faiz_TY2024_093025.pdf",
+      "folder": "2. Taxation_and_FBR",
+      "processed_at": "2026-09-03T09:03:36.934257+00:00"
+    },
+    "77b8e2843f8a10f81d6ddbe96c6ba5de327085f47b7a4d34972152d4abed3f7f": {
+      "doc_id": "doc-5bbbcbaacd37",
+      "source": "2. Taxation_and_FBR/Income_Tax_Returns/FBR_Income_Tax_Return_Hazeef_Faiz_TY2023_093024.pdf",
+      "doc_type": "tax",
+      "confidence": 0.75,
+      "new_name": "Tax_FBR_Income_Tax_Return_Hazeef_Faiz_TY2023_093024.pdf",
+      "folder": "2. Taxation_and_FBR",
+      "processed_at": "2026-09-03T09:03:43.175077+00:00"
+    },
+    "6076887ab9ffa7ee8993825641157df7eace2d7a8ddb70e161f127441088d645": {
+      "doc_id": "doc-21602b985a71",
+      "source": "2. Taxation_and_FBR/Income_Tax_Returns_and_Wealth_Statements/FBR_Acknowledgement_Zafar_Iqbal_TY2025.pdf",
+      "doc_type": "tax",
+      "confidence": 0.7,
+      "new_name": "Tax_FBR_Acknowledgement_Zafar_Iqbal_TY2025.pdf",
+      "folder": "2. Taxation_and_FBR",
+      "processed_at": "2026-09-03T09:03:44.775688+00:00"
+    },
+    "61573197cfe8ee3eebae28a6f41e7a371548a3a668b8cf37c9c3b2c8a6b6db14": {
+      "doc_id": "doc-a8500b2d0cf9",
+      "source": "3. Financial_and_Banking/Account_Statements/Bank_Statement_Yasmeen_Tahira_Bank_Alfalah_JUN2025_JUN2026.pdf",
+      "doc_type": "bank_statement",
+      "confidence": 0.85,
+      "new_name": "Statement_Bank_Statement_Yasmeen_Tahira_Bank_Alfalah_JUN2025_JUN2026.pdf",
+      "folder": "3. Financial_and_Banking",
+      "processed_at": "2026-09-03T09:04:03.760594+00:00"
+    },
+    "1892cea634e07129aa55fed0fcc6bcaeb7d2505998100442bc760533efe149f1": {
+      "doc_id": "doc-d2ac5ed2ae77",
+      "source": "3. Financial_and_Banking/Account_Statements/Bank_Statement_Muneeb_Faiz_Bank_AL_Habib_JUN2025_JUN2026.pdf",
+      "doc_type": "bank_statement",
+      "confidence": 0.7,
+      "new_name": "Statement_MUNEEB FAIZ.pdf",
+      "folder": "3. Financial_and_Banking",
+      "processed_at": "2026-09-03T09:04:04.484631+00:00"
+    },
+    "c265efbef7316bec7bcd9262b40cbcc5306ffa48ff7896688d88ddd2366b5c6b": {
+      "doc_id": "doc-337b17002529",
+      "source": "3. Financial_and_Banking/Account_Statements/Banking_ZTBL_eKYC_Information_Sharing_Consent_Form.pdf",
+      "doc_type": "bank_statement",
+      "confidence": 0.7,
+      "new_name": "Statement_Banking_ZTBL_eKYC_Information_Sharing_Consent_Form.pdf",
+      "folder": "3. Financial_and_Banking",
+      "processed_at": "2026-09-03T09:04:16.155590+00:00"
+    },
+    "d06e3c9e09b46aa1b1a59a5a457aeaabb4fb6acf072cfbdff24629a3ea8eddf6": {
+      "doc_id": "doc-091ab147468a",
+      "source": "3. Financial_and_Banking/Bank_Challans_and_Deposit_Slips/Bank_Fund_Transfer_Deposit_Receipt_Sr101311_032024.pdf",
+      "doc_type": "bank_statement",
+      "confidence": 0.7,
+      "new_name": "Statement_Bank_Fund_Transfer_Deposit_Receipt_Sr101311_032024.pdf",
+      "folder": "3. Financial_and_Banking",
+      "processed_at": "2026-09-03T09:04:44.331953+00:00"
+    },
+    "2944417f97c6890d2f667d7ba6dd413505861e6f3f9e6bc0d4d4a436c47e2391": {
+      "doc_id": "doc-4dee38646f45",
+      "source": "3. Financial_and_Banking/Account_Statements/Banking_Person_Document_FaizRasool_JUN2016.pdf",
+      "doc_type": "bank_statement",
+      "confidence": 0.7,
+      "new_name": "Statement_Personal Rank.pdf",
+      "folder": "3. Financial_and_Banking",
+      "processed_at": "2026-09-03T09:04:51.351848+00:00"
+    },
+    "80c55dd0e0642cc253dc45b2f1a95b5edd6b3e32b1b2dba569ce4d69c6c97ac7": {
+      "doc_id": "doc-bbab1685016f",
+      "source": "3. Financial_and_Banking/Bank_Statements/Bank_Statement_Bank_Alfalah_Ateeb_Faiz_Acc01681007717031_010125_021226.xlsx",
+      "doc_type": "bank_statement",
+      "confidence": 0.7,
+      "new_name": "Statement_1005095238.xlsx",
+      "folder": "3. Financial_and_Banking",
+      "processed_at": "2026-09-03T09:04:58.870685+00:00"
+    },
+    "1ca14467b04c58d93e76077ddcb775faa2021e1362f5a8834402874dfd9cfadc": {
+      "doc_id": "doc-9757ee0bfa61",
+      "source": "3. Financial_and_Banking/Bank_Statements/Bank_Statement_Bank_Alfalah_Ateeb_Faiz_Acc01681007717031_010123_061725.pdf",
+      "doc_type": "bank_statement",
+      "confidence": 0.7,
+      "new_name": "Statement_1007717031.pdf",
+      "folder": "3. Financial_and_Banking",
+      "processed_at": "2026-09-03T09:06:57.628310+00:00"
+    },
+    "54fbc2e9cdc95b9bf6133108f7594fa110c1ea5d88e301178a0f2ff0b4cd0c22": {
+      "doc_id": "doc-d7403bb20ae6",
+      "source": "3. Financial_and_Banking/Account_Statements/Bank_Statement_Faiz_Rasool_Cheema_UBL_000258945285_DEC2022_OCT2023.pdf",
+      "doc_type": "bank_statement",
+      "confidence": 0.76,
+      "new_name": "Statement_009203216587882.pdf",
+      "folder": "3. Financial_and_Banking",
+      "processed_at": "2026-09-03T09:08:11.749971+00:00"
+    },
+    "0d90f0daffe6a479043d4476760a0fc130058e14044cae099425d01870aba08f": {
+      "doc_id": "doc-dde0e55f3b78",
+      "source": "3. Financial_and_Banking/Bank_Statements/Bank_Statement_Bank_Alfalah_Ateeb_Faiz_Acc01681007717031_010125_021226_43Pages.pdf",
+      "doc_type": "bank_statement",
+      "confidence": 0.7,
+      "new_name": "Statement_1005095238.pdf",
+      "folder": "3. Financial_and_Banking",
+      "processed_at": "2026-09-03T09:09:13.176187+00:00"
+    },
+    "1d7fd088885e57d2d756c80ea48b0f7d0582dc2c31a7b683c99eb47cb889f76a": {
+      "doc_id": "doc-3b1edc8e2462",
+      "source": "3. Financial_and_Banking/Bank_Statements/Bank_Statement_Bank_Alfalah_Hazeef_Faiz_061825_061826_20Pages.pdf",
+      "doc_type": "bank_statement",
+      "confidence": 0.76,
+      "new_name": "Statement_1008968947.pdf",
+      "folder": "3. Financial_and_Banking",
+      "processed_at": "2026-09-03T09:10:53.966005+00:00"
+    },
+    "5a360db652f1f6299a4525b76891ce1e7085d9d38d417ae9c087fccc4bc2a75f": {
+      "doc_id": "doc-0116e63ec5bd",
+      "source": "3. Financial_and_Banking/Bank_Statements/Bank_Statement_JS_Bank_ISCREM_Ateeb_Faiz_Acc089200000256_021325_021226.xlsx",
+      "doc_type": "bank_statement",
+      "confidence": 0.7,
+      "new_name": "Statement_01681007717031.xlsx",
+      "folder": "3. Financial_and_Banking",
+      "processed_at": "2026-09-03T09:11:01.946402+00:00"
+    },
+    "dfcb893f0154259dc07ac2cec867d73957c3c120e2a1d2fbe77fd531eb57c9b8": {
+      "doc_id": "doc-23de81ad74ca",
+      "source": "3. Financial_and_Banking/Bank_Statements/Bank_Statement_Bank_Alfalah_Ateeb_Faiz_Acc01681007717031_112022_092025_33Pages.pdf",
+      "doc_type": "bank_statement",
+      "confidence": 0.7,
+      "new_name": "Statement_1007717031.pdf",
+      "folder": "3. Financial_and_Banking",
+      "processed_at": "2026-09-03T09:11:05.501511+00:00"
+    },
+    "f4f8a2db030be60b4c45ae90b54e6b2b90b97bc9ac686771b3e04212d375f340": {
+      "doc_id": "doc-3fedac15aa56",
+      "source": "3. Financial_and_Banking/Bank_Statements/Bank_Statement_UBL_Mukammal_Acc0968258945285_103022_103023_30Pages.pdf",
+      "doc_type": "bank_statement",
+      "confidence": 0.7,
+      "new_name": "Statement_PK06UNIL0109000258945285.pdf",
+      "folder": "3. Financial_and_Banking",
+      "processed_at": "2026-09-03T09:13:04.066517+00:00"
+    },
+    "bf2567f5a8f4d647a57886e90847afc467071b3db950071a13d1ef1cf25f214f": {
+      "doc_id": "doc-127d3f3ea892",
+      "source": "3. Financial_and_Banking/Financial_Spreadsheets_and_Calculations/Financial_Ledger_Masjid_Donation_Subscription_Sheet_020726.pdf",
+      "doc_type": "bank_statement",
+      "confidence": 0.7,
+      "new_name": "Statement_Financial_Ledger_Masjid_Donation_Subscription_Sheet_020726.pdf",
+      "folder": "3. Financial_and_Banking",
+      "processed_at": "2026-09-03T09:13:24.456368+00:00"
+    },
+    "daef4f433788c233e94222daf5f0f3344b3481acff5888c2eb77563e54bec7d1": {
+      "doc_id": "doc-58009af0adf8",
+      "source": "3. Financial_and_Banking/Bank_Statements/Bank_Statement_ZTBL_Ahmad_Nagar_Acc24447-AMO-10300_030123_103123.pdf",
+      "doc_type": "bank_statement",
+      "confidence": 0.7,
+      "new_name": "Statement_Bank_Statement_ZTBL_Ahmad_Nagar_Acc24447-AMO-10300_030123_103123.pdf",
+      "folder": "3. Financial_and_Banking",
+      "processed_at": "2026-09-03T09:13:35.679436+00:00"
+    },
+    "a2a798b3469735a8279a4551e5070af68a7d7813a1afb6c075a7ad68951b5522": {
+      "doc_id": "doc-48649b1c75f0",
+      "source": "3. Financial_and_Banking/Financial_Spreadsheets_and_Calculations/Financial_Template_Cash_Recovery_Receipt.docx",
+      "doc_type": "receipt",
+      "confidence": 1.0,
+      "new_name": "Receipt_1234.docx",
+      "folder": "8. ECommerce_and_Marketing",
+      "processed_at": "2026-09-03T09:13:45.489622+00:00"
+    },
+    "28dc59b0dae864792ac694f79a5f2ff2aa13f87b172b5a6200748f5e4ae83dc3": {
+      "doc_id": "doc-ac6e02741f79",
+      "source": "3. Financial_and_Banking/Payment_and_Dispute_Ledgers/Financial_Dispute_Reconciliation_Ledger_Shahzad_Ijaz_and_Qasim_Ali_2023_2025_v01.xlsx",
+      "doc_type": "bank_statement",
+      "confidence": 1.0,
+      "new_name": "Statement_Financial_Dispute_Reconciliation_Ledger_Shahzad_Ijaz_and_Qasim_Ali_2023_2025_v01.xlsx",
+      "folder": "3. Financial_and_Banking",
+      "processed_at": "2026-09-03T09:13:58.096229+00:00"
+    },
+    "dd1231558b17d70afb97e0267557bbbc831967fadbc925dc87b5f8653f16960a": {
+      "doc_id": "doc-75885cbc4ac2",
+      "source": "3. Financial_and_Banking/Payment_and_Dispute_Ledgers/Payment_Transaction_Ledger_Umar_Farooq_Meezan_and_Cash_2023_v04.pdf",
+      "doc_type": "bank_statement",
+      "confidence": 1.0,
+      "new_name": "Statement_Payment_Transaction_Ledger_Umar_Farooq_Meezan_and_Cash_2023_v04.pdf",
+      "folder": "3. Financial_and_Banking",
+      "processed_at": "2026-09-03T09:14:18.944753+00:00"
+    },
+    "7ce14223622af140911e32c0cc42bef9f8e4d965a77b931d8f3587d0cb28b82a": {
+      "doc_id": "doc-64b66f8e4e34",
+      "source": "3. Financial_and_Banking/Financial_Spreadsheets_and_Calculations/Financial_Ledger_Umar_Farooq_Cash_Euro_Transaction_Ledger_120722_062623.pdf",
+      "doc_type": "bank_statement",
+      "confidence": 0.7,
+      "new_name": "Statement_Financial_Ledger_Umar_Farooq_Cash_Euro_Transaction_Ledger_120722_062623.pdf",
+      "folder": "3. Financial_and_Banking",
+      "processed_at": "2026-09-03T09:14:34.321377+00:00"
+    },
+    "7ec83182d877a6fd9716d2bacc685424024a4c649cb3325f1e344b8b1afd8b82": {
+      "doc_id": "doc-30dd5286b8d7",
+      "source": "4. Legal_and_Compliance/Cybercrime_and_Police_Complaints/Legal_Record_HazeefFaiz_Document_v04.pdf",
+      "doc_type": "immigration",
+      "confidence": 1.0,
+      "new_name": "Doc_Legal_Record_HazeefFaiz_Document_v04.pdf",
+      "folder": "6. Immigration_and_Travel",
+      "processed_at": "2026-09-03T09:14:46.191626+00:00"
+    },
+    "10c95376231c2f163a8715e11ddabe6f48f25d25d9b267fd53124d46cdadbc80": {
+      "doc_id": "doc-8eebb6c536d2",
+      "source": "4. Legal_and_Compliance/Cybercrime_and_Police_Complaints/Legal_Record_Ztbl_Document_v02.pdf",
+      "doc_type": "legal",
+      "confidence": 0.7,
+      "new_name": "Legal_Legal_Record_Ztbl_Document_v02.pdf",
+      "folder": "4. Legal_and_Compliance",
+      "processed_at": "2026-09-03T09:14:56.698370+00:00"
+    },
+    "366601abe79ad2c5eee8e3977208cedeb480cffb6cc3f4de3c94b4db224fe87f": {
+      "doc_id": "doc-652e07944073",
+      "source": "4. Legal_and_Compliance/Cybercrime_and_Police_Complaints/Legal_Record_AteebFaiz_Document_2025_v11.pdf",
+      "doc_type": "bank_statement",
+      "confidence": 1.0,
+      "new_name": "Statement_Legal_Record_AteebFaiz_Document_2025_v11.pdf",
+      "folder": "3. Financial_and_Banking",
+      "processed_at": "2026-09-03T09:14:56.847005+00:00"
+    },
+    "3c6537d60337d28abdafebfa2ea688ae6ed2ca88d3b00fdfdfced5b143d57bb6": {
+      "doc_id": "doc-6664fc76b0c2",
+      "source": "4. Legal_and_Compliance/Property_and_Land_Revenue/Punjab_Land_Revenue_DC_Valuation_Table_Mauza_KotInayatKhan_Rate26kPerMarla.png",
+      "doc_type": "legal",
+      "confidence": 0.7,
+      "new_name": "Legal_Punjab_Land_Revenue_DC_Valuation_Table_Mauza_KotInayatKhan_Rate26kPerMarla.png",
+      "folder": "4. Legal_and_Compliance",
+      "processed_at": "2026-09-03T09:15:40.309380+00:00"
+    },
+    "014f85e78ce8575fbdc7883ba4228745b5bddaddbf7aea7e3f3c88f4607194d8": {
+      "doc_id": "doc-960b72d3c12b",
+      "source": "4. Legal_and_Compliance/Property_and_Land_Revenue/Punjab_Land_Revenue_DC_Valuation_Table_Mauza_Dhonkal_Rural_Rate48kPerMarla.png",
+      "doc_type": "legal",
+      "confidence": 0.7,
+      "new_name": "Legal_Punjab_Land_Revenue_DC_Valuation_Table_Mauza_Dhonkal_Rural_Rate48kPerMarla.png",
+      "folder": "4. Legal_and_Compliance",
+      "processed_at": "2026-09-03T09:15:40.612430+00:00"
+    },
+    "07aa65ad1b8c5caf43bbeb76f25d0588f0b10e109f2a8f56dbe83b9d1087918d": {
+      "doc_id": "doc-f188a1f186e6",
+      "source": "5. Corporate_and_SECP/Corporate_Shares_and_CDS/CDC_CDS_Share_Issuance_Admission_Letter_Yasmeen_and_Sons_Pvt_Ltd_Ref2026-46053_041326.pdf",
+      "doc_type": "corporate",
+      "confidence": 0.7,
+      "new_name": "Doc_CDC_CDS_Share_Issuance_Admission_Letter_Yasmeen_and_Sons_Pvt_Ltd_Ref2026-46053_041326.pdf",
+      "folder": "5. Corporate_and_SECP",
+      "processed_at": "2026-09-03T09:15:56.112993+00:00"
+    },
+    "1421522f145ff4f81e5e5ff00f161c6a84efb03fdcfbae84b1686c6a7a3e2d93": {
+      "doc_id": "doc-1a4f059b1c5b",
+      "source": "7. Education_and_Professional/Resumes_and_Portfolios/Professional_Resume_Ateeb_Faiz_UI_UX_and_Frontend_Developer.docx",
+      "doc_type": "education",
+      "confidence": 0.7,
+      "new_name": "Doc_Professional_Resume_Ateeb_Faiz_UI_UX_and_Frontend_Developer.docx",
+      "folder": "7. Education_and_Professional",
+      "processed_at": "2026-09-03T09:16:05.108645+00:00"
+    },
+    "b354ac9b01bd2acef8a563fa66baca595e60c8ba6cd72196d5efbfe3d8740b9d": {
+      "doc_id": "doc-fbe443558793",
+      "source": "6. Immigration_and_Travel/Visas_and_Work_Permits/Immigration_Visa_10_Misc_System_and_Data_Ateeb_Faiz_Doc_Record_V42_APR2022.pdf",
+      "doc_type": "identity",
+      "confidence": 1.0,
+      "new_name": "ID_Immigration_Visa_10_Misc_System_and_Data_Ateeb_Faiz_Doc_Record_V42_APR2022.pdf",
+      "folder": "1. Identity_and_Civil_Registry",
+      "processed_at": "2026-09-03T09:16:25.729671+00:00"
+    },
+    "6c73969695d4c1b2d3f4eca97d8b21f07fd55b2bbf6f6973df838608b71c5266": {
+      "doc_id": "doc-a58c6b7a69bc",
+      "source": "3. Financial_and_Banking/Bank_Statements/Bank_Statement_Bank_Alfalah_Ateeb_Faiz_Acc01681007717031_010125_061826_154Pages.pdf",
+      "doc_type": "bank_statement",
+      "confidence": 0.7,
+      "new_name": "Statement_1005095238.pdf",
+      "folder": "3. Financial_and_Banking",
+      "processed_at": "2026-09-03T09:17:01.253945+00:00"
     }
   }
 }

@@ -132,7 +132,7 @@ def save_state(state: dict):
     json.dump(state, open(STATE_FILE, "w"), indent=2)
 
 
-def main(src: str, dest_root: str, dry_run: bool = False, limit: int = 0):
+def main(src: str, dest_root: str, dry_run: bool = False, limit: int = 0, organize_only: bool = False):
     src = Path(src)
     dest_root = Path(dest_root)
     if not src.is_dir():
@@ -151,6 +151,30 @@ def main(src: str, dest_root: str, dry_run: bool = False, limit: int = 0):
         docs = docs[:limit]
     total = len(docs)
     print(f"[batch] {total} documents under {src}")
+
+    # ORGANIZE-ONLY: use stored classification results to copy/rename; no API calls
+    if organize_only:
+        copied, missing, collisions = 0, 0, 0
+        for digest, rec in state["processed"].items():
+            src_path = src / rec["source"]
+            if not src_path.exists():
+                missing += 1
+                continue
+            folder = rec.get("folder") or "00. _QUARANTINE"
+            new_name = rec.get("new_name") or src_path.name
+            target = dest_root / folder / new_name
+            counter = 1
+            while target.exists():
+                collisions += 1
+                target = dest_root / folder / f"{Path(new_name).stem}_{counter}{Path(new_name).suffix}"
+                counter += 1
+            if not dry_run:
+                shutil.copy2(src_path, target)
+            copied += 1
+        mode = "WOULD COPY" if dry_run else "COPIED"
+        print(f"[organize] {mode} {copied} docs into {dest_root} "
+              f"(missing on disk: {missing}, collision-renamed: {collisions})")
+        return
 
     # REPORT — collect issues for a final rollup
     issues: list[str] = []
@@ -257,8 +281,9 @@ if __name__ == "__main__":
     src = sys.argv[1] if len(sys.argv) > 1 else r"/mnt/c/Users/ateeb/OneDrive/Documents/Documents"
     dest = sys.argv[2] if len(sys.argv) > 2 else r"/mnt/c/Users/ateeb/OneDrive/Documents/Documents_organized"
     dry = "--dry-run" in sys.argv
+    organize_only = "--organize-only" in sys.argv
     limit = 0
     for a in sys.argv:
         if a.startswith("--limit="):
             limit = int(a.split("=")[1])
-    main(src, dest, dry_run=dry, limit=limit)
+    main(src, dest, dry_run=dry, limit=limit, organize_only=organize_only)

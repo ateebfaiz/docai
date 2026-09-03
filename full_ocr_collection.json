@@ -1,0 +1,26 @@
+{
+  "info": { "name": "DocAI Full OCR API", "_postman_id": "docai-full-ocr", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
+  "item": [
+    {
+      "name": "Health Check",
+      "event": [{ "listen": "test", "script": { "exec": ["pm.test('Status 200', function(){pm.response.to.have.status(200);});", "pm.test('service docai', function(){pm.expect(pm.response.json().service).to.eql('docai');});"] } }],
+      "request": { "method": "GET", "url": { "raw": "{{BASE_URL}}/health", "host": ["{{BASE_URL}}"], "path": ["health"] } }
+    },
+    {
+      "name": "Upload + OCR Pipeline",
+      "event": [{ "listen": "test", "script": { "exec": ["pm.test('Status 201', function(){pm.response.to.have.status(201);});", "const j = pm.response.json();", "pm.test('has doc_type', function(){pm.expect(j.doc_type).to.exist;});", "pm.test('has entities', function(){pm.expect(j.entities).to.exist;});", "pm.environment.set('DOC_ID', j.id);", "pm.test('invoice number found', function(){const inv = j.entities && j.entities.invoice_numbers; pm.expect(inv && inv.length > 0).to.equal(true);});"] } }],
+      "request": { "method": "POST", "header": [], "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": "/home/ateeb/projects/ai-cli/invoice_test.png" }] }, "url": { "raw": "{{BASE_URL}}/documents", "host": ["{{BASE_URL}}"], "path": ["documents"] } }
+    },
+    {
+      "name": "Get Document Result",
+      "event": [{ "listen": "test", "script": { "exec": ["pm.test('Status 200', function(){pm.response.to.have.status(200);});", "const j = pm.response.json();", "pm.test('persisted', function(){pm.expect(j.status).to.eql('done');});"] } }],
+      "request": { "method": "GET", "url": { "raw": "{{BASE_URL}}/documents/{{DOC_ID}}", "host": ["{{BASE_URL}}"], "path": ["documents", "{{DOC_ID}}"] } }
+    },
+    {
+      "name": "List All Documents",
+      "event": [{ "listen": "test", "script": { "exec": ["pm.test('Status 200', function(){pm.response.to.have.status(200);});", "pm.test('is array', function(){pm.expect(Array.isArray(pm.response.json())).to.equal(true);});"] } }],
+      "request": { "method": "GET", "url": { "raw": "{{BASE_URL}}/documents", "host": ["{{BASE_URL}}"], "path": ["documents"] } }
+    }
+  ],
+  "variable": [{ "key": "BASE_URL", "value": "https://docai-production-424b.up.railway.app", "type": "string" }]
+}

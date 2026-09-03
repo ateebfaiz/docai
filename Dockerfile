@@ -21,8 +21,6 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV UPLOAD_DIR=/data/uploads
 ENV DB_DIR=/data
-# Railway ephemeral volume mount
-VOLUME /data
 
 EXPOSE 8000
 CMD ["sh", "-c", "uvicorn src.ai_cli.api:app --host 0.0.0.0 --port ${PORT:-8000}"]

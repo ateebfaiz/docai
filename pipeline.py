@@ -192,22 +192,32 @@ def ocr_image(path: str | Path) -> tuple[str, dict]:
 def parse_document(path: str | Path) -> dict[str, Any]:
     """Docling: PDF/image/docx/xlsx/html → structure + tables + md.
     Fast path: disable table-structure model and internal OCR (major CPU hogs).
-    Our OCR cascade handles image regions; pdfplumber-style text extraction handles text layers.
+    Falls back to default conversion if the fast path fails for any reason.
     """
     result: dict[str, Any] = {"markdown": "", "tables": [], "text": "", "error": None, "page_count": 0}
     conv = _docling()
     if conv is None:
         result["error"] = "docling unavailable"
         return result
+    doc = None
+    # Fast path: fewer expensive model passes
     try:
         from docling.datamodel.pipeline_options import PdfPipelineOptions
         opts = PdfPipelineOptions()
-        opts.do_ocr = False                  # our cascade handles OCR when needed
-        opts.do_table_structure = False      # biggest CPU hog; tables come from text layer
-        opts.generate_page_images = False
-        opts.generate_picture_images = False
+        opts.do_ocr = False
+        opts.do_table_structure = False
         conv.pipeline_options = opts
-        doc = conv.convert(str(path), pipeline_options=opts).document
+        doc = conv.convert(str(path)).document
+    except Exception:
+        doc = None
+    # Fallback: default conversion (full models) if fast path produced nothing
+    if doc is None:
+        try:
+            doc = conv.convert(str(path)).document
+        except Exception as e:
+            result["error"] = str(e)
+            return result
+    try:
         result["markdown"] = doc.export_to_markdown()
         result["text"] = doc.export_to_text()
         tables = []
@@ -608,12 +618,41 @@ def run_full_pipeline(path: str | Path) -> dict:
         parse = parse_document(p)
         text = parse.get("text") or ""
         ocr_report = {}
-        # Image files, or non-text binary docs docling couldn't parse → OCR.
-        if ext in _IMG_EXTS or (not text.strip() and ext not in _TEXT_EXTS):
+        if not text.strip() and ext == ".pdf":
+            # PDF with no text layer (scanned) → try pypdf quick pass first
+            try:
+                from pypdf import PdfReader
+                text = "\n".join(
+                    (page.extract_text() or "") for page in PdfReader(str(p)).pages
+                )
+                parse["text"] = text
+            except Exception:
+                pass
+        # Image files, or remaining non-text docs docling couldn't parse → OCR.
+        if ext in _IMG_EXTS or (not text.strip() and ext not in _TEXT_EXTS and ext != ".pdf"):
             ocr_text, ocr_report = ocr_image(p)
             if len(ocr_text) > len(text):
                 text = ocr_text
                 parse["text"] = text
+        if not text.strip() and ext == ".pdf":
+            # Last resort for scanned PDFs: rasterize first page(s) via PyMuPDF then OCR
+            try:
+                import fitz  # PyMuPDF
+                doc = fitz.open(str(p))
+                ocr_text = ""
+                for page in doc:
+                    pix = page.get_pixmap(dpi=200)
+                    img_path = p.with_suffix(".page.png")
+                    pix.save(img_path)
+                    page_text, page_report = ocr_image(img_path)
+                    ocr_report[f"page_{page.number}"] = page_report
+                    ocr_text += page_text + "\n"
+                    img_path.unlink(missing_ok=True)
+                if len(ocr_text.strip()) > len(text.strip()):
+                    text = ocr_text.strip()
+                    parse["text"] = text
+            except Exception as e:
+                ocr_report["pymupdf"] = f"error: {e}"
         if not text.strip():
             text = _read_fallback(p)
             parse["text"] = text
